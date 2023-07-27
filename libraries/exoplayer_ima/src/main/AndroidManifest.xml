@@ -14,7 +14,7 @@
      limitations under the License.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="androidx.media3.exoplayer.ima">
+    package="bidmachine.media3.exoplayer.ima">
   <uses-sdk />
   <application>
     <meta-data android:name="com.google.android.gms.ads.AD_MANAGER_APP"

@@ -16,7 +16,7 @@
   -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="androidx.media3.demo.transformer">
+    package="bidmachine.media3.demo.transformer">
   <uses-sdk />
 
   <uses-permission android:name="android.permission.INTERNET"/>
@@ -32,7 +32,7 @@
       android:taskAffinity=""
       android:requestLegacyExternalStorage="true"
       tools:targetApi="29">
-    <activity android:name=".ConfigurationActivity"
+    <activity android:name="bidmachine.media3.demo.transformer.ConfigurationActivity"
         android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
         android:launchMode="singleTop"
         android:label="@string/app_name"
@@ -43,7 +43,7 @@
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
       <intent-filter>
-        <action android:name="androidx.media3.demo.transformer.action.VIEW"/>
+        <action android:name="bidmachine.media3.demo.transformer.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <data android:scheme="http"/>
         <data android:scheme="https"/>
@@ -52,13 +52,13 @@
         <data android:scheme="file"/>
       </intent-filter>
       <intent-filter>
-        <action android:name="androidx.media3.demo.transformer.action.VIEW"/>
+        <action android:name="bidmachine.media3.demo.transformer.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <data android:scheme="content"/>
         <data android:mimeType="*/*"/>
       </intent-filter>
     </activity>
-    <activity android:name=".TransformerActivity"
+    <activity android:name="bidmachine.media3.demo.transformer.TransformerActivity"
         android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
         android:launchMode="singleTop"
         android:label="@string/app_name"

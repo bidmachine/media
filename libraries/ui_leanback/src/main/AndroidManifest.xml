@@ -15,7 +15,7 @@
 -->
 
 <manifest xmlns:tools="http://schemas.android.com/tools"
-  package="androidx.media3.ui.leanback"
+  package="bidmachine.media3.ui.leanback"
   tools:ignore="MissingLeanbackLauncher,ImpliedTouchscreenHardware,MissingLeanbackSupport">
   <uses-sdk />
 </manifest>

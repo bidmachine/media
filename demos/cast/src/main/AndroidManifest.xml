@@ -14,7 +14,7 @@
      limitations under the License.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="androidx.media3.demo.cast">
+    package="bidmachine.media3.demo.cast">
 
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
@@ -31,9 +31,9 @@
       android:taskAffinity="">
 
     <meta-data android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
-        android:value="androidx.media3.cast.DefaultCastOptionsProvider"/>
+        android:value="bidmachine.media3.cast.DefaultCastOptionsProvider"/>
 
-    <activity android:name=".MainActivity"
+    <activity android:name="bidmachine.media3.demo.cast.MainActivity"
         android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|uiMode"
         android:launchMode="singleTop" android:label="@string/application_name"
         android:theme="@style/Theme.AppCompat"

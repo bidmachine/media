@@ -14,6 +14,6 @@
      limitations under the License.
 -->
 
-<manifest package="androidx.media3.decoder.av1">
+<manifest package="bidmachine.media3.decoder.av1">
   <uses-sdk />
 </manifest>

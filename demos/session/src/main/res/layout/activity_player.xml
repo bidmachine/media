@@ -20,13 +20,13 @@
   android:layout_width="match_parent"
   android:layout_height="match_parent"
   android:background="@color/player_background"
-  tools:context=".PlayerActivity">
+  tools:context="bidmachine.media3.demo.session.PlayerActivity">
 
-  <androidx.media3.ui.AspectRatioFrameLayout
+  <bidmachine.media3.ui.AspectRatioFrameLayout
     android:layout_height="300dp"
     android:layout_width="match_parent"
     >
-    <androidx.media3.ui.PlayerView
+    <bidmachine.media3.ui.PlayerView
       android:id="@+id/player_view"
       android:background="@color/player_background"
       android:layout_width="match_parent"
@@ -36,7 +36,7 @@
       app:repeat_toggle_modes="one|all"
       app:show_shuffle_button="true"
       app:shutter_background_color="@color/player_background" />
-  </androidx.media3.ui.AspectRatioFrameLayout>
+  </bidmachine.media3.ui.AspectRatioFrameLayout>
 
   <TextView
     android:id="@+id/media_artist"

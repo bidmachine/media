@@ -15,7 +15,7 @@
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="androidx.media3.demo.session">
+    package="bidmachine.media3.demo.session">
 
   <uses-sdk/>
   <uses-permission android:name="android.permission.INTERNET" />
@@ -30,7 +30,7 @@
       tools:replace="android:name">
 
     <activity
-        android:name=".MainActivity"
+        android:name="bidmachine.media3.demo.session.MainActivity"
         android:exported="true">
       <intent-filter>
         <action android:name="android.intent.action.MAIN" />
@@ -39,21 +39,21 @@
     </activity>
 
     <activity
-        android:name=".PlayerActivity"
+        android:name="bidmachine.media3.demo.session.PlayerActivity"
         android:exported="true"
         android:launchMode="singleTop"
         android:theme="@style/Theme.AppCompat.NoActionBar"/>
 
     <activity
-        android:name=".PlayableFolderActivity"
+        android:name="bidmachine.media3.demo.session.PlayableFolderActivity"
         android:exported="true"/>
 
     <service
-        android:name=".PlaybackService"
+        android:name="bidmachine.media3.demo.session.PlaybackService"
         android:foregroundServiceType="mediaPlayback"
         android:exported="true">
       <intent-filter>
-        <action android:name="androidx.media3.session.MediaSessionService"/>
+        <action android:name="bidmachine.media3.session.MediaSessionService"/>
         <action android:name="android.media.browse.MediaBrowserService"/>
       </intent-filter>
     </service>

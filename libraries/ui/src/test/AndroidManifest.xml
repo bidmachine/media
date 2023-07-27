@@ -15,6 +15,6 @@
   ~ limitations under the License.
   -->
 
-<manifest package="androidx.media3.ui.test">
+<manifest package="bidmachine.media3.ui.test">
   <uses-sdk/>
 </manifest>

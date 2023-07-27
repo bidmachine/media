@@ -33,7 +33,7 @@ allprojects {
         }
         buildDir = "${externalBuildDir}/${project.name}"
     }
-    group = 'androidx.media3'
+    group = 'bidmachine.media3'
 }
 
 apply from: 'javadoc_combined.gradle'

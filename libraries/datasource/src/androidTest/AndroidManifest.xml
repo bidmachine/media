@@ -16,7 +16,7 @@
 
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="androidx.media3.datasource.test">
+    package="bidmachine.media3.datasource.test">
 
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-sdk/>
@@ -27,12 +27,12 @@
       android:usesCleartextTraffic="true"
       tools:ignore="MissingApplicationIcon,HardcodedDebugMode">
     <provider
-      android:authorities="androidx.media3.test.utils.AssetContentProvider"
-      android:name="androidx.media3.test.utils.AssetContentProvider"/>
+      android:authorities="bidmachine.media3.test.utils.AssetContentProvider"
+      android:name="bidmachine.media3.test.utils.AssetContentProvider"/>
   </application>
 
   <instrumentation
-      android:targetPackage="androidx.media3.datasource.test"
+      android:targetPackage="bidmachine.media3.datasource.test"
       android:name="androidx.test.runner.AndroidJUnitRunner"/>
 
 </manifest>

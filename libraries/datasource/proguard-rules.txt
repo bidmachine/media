@@ -1,7 +1,7 @@
 # Proguard rules specific to the DataSource module.
 
 # Constant folding for resource integers may mean that a resource passed to this method appears to be unused. Keep the method to prevent this from happening.
--keepclassmembers class androidx.media3.datasource.RawResourceDataSource {
+-keepclassmembers class bidmachine.media3.datasource.RawResourceDataSource {
   public static android.net.Uri buildRawResourceUri(int);
 }
 
