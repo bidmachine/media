@@ -226,7 +226,7 @@ public final class DecodeOneFrameUtil {
    * Returns the name of a decoder that supports this {@link MediaFormat}.
    *
    * <p>Capability check is similar to
-   * androidx.media3.transformer.EncoderUtil.java#findCodecForFormat().
+   * bidmachine.media3.transformer.EncoderUtil.java#findCodecForFormat().
    */
   @Nullable
   private static String getSupportedDecoderName(MediaFormat format) {

@@ -404,7 +404,7 @@ public class PlayerView extends FrameLayout implements AdViewProvider {
         case SURFACE_TYPE_SPHERICAL_GL_SURFACE_VIEW:
           try {
             Class<?> clazz =
-                Class.forName("androidx.media3.exoplayer.video.spherical.SphericalGLSurfaceView");
+                Class.forName("bidmachine.media3.exoplayer.video.spherical.SphericalGLSurfaceView");
             surfaceView = (View) clazz.getConstructor(Context.class).newInstance(context);
           } catch (Exception e) {
             throw new IllegalStateException(
@@ -415,7 +415,7 @@ public class PlayerView extends FrameLayout implements AdViewProvider {
         case SURFACE_TYPE_VIDEO_DECODER_GL_SURFACE_VIEW:
           try {
             Class<?> clazz =
-                Class.forName("androidx.media3.exoplayer.video.VideoDecoderGLSurfaceView");
+                Class.forName("bidmachine.media3.exoplayer.video.VideoDecoderGLSurfaceView");
             surfaceView = (View) clazz.getConstructor(Context.class).newInstance(context);
           } catch (Exception e) {
             throw new IllegalStateException(

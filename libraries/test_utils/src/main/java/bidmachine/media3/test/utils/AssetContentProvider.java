@@ -37,7 +37,7 @@ import java.io.IOException;
 public final class AssetContentProvider extends ContentProvider
     implements ContentProvider.PipeDataWriter<Object> {
 
-  private static final String AUTHORITY = "androidx.media3.test.utils.AssetContentProvider";
+  private static final String AUTHORITY = "bidmachine.media3.test.utils.AssetContentProvider";
   private static final String PARAM_PIPE_MODE = "pipe-mode";
 
   public static Uri buildUri(String filePath, boolean pipeMode) {

@@ -544,8 +544,8 @@ public final class MediaItem implements Bundleable {
 
     /**
      * Sets the optional tag for custom attributes. The tag for the media source which will be
-     * published in the {@code androidx.media3.common.Timeline} of the source as {@code
-     * androidx.media3.common.Timeline.Window#tag}.
+     * published in the {@code bidmachine.media3.common.Timeline} of the source as {@code
+     * bidmachine.media3.common.Timeline.Window#tag}.
      *
      * <p>This method should only be called if {@link #setUri} is passed a non-null value.
      */
@@ -1121,8 +1121,8 @@ public final class MediaItem implements Bundleable {
 
     /**
      * Optional tag for custom attributes. The tag for the media source which will be published in
-     * the {@code androidx.media3.common.Timeline} of the source as {@code
-     * androidx.media3.common.Timeline.Window#tag}.
+     * the {@code bidmachine.media3.common.Timeline} of the source as {@code
+     * bidmachine.media3.common.Timeline.Window#tag}.
      */
     @Nullable public final Object tag;
 
@@ -2020,7 +2020,7 @@ public final class MediaItem implements Bundleable {
    * MediaItem}.
    *
    * <p>This metadata is most useful for cases where playback requests are forwarded to other player
-   * instances (e.g. from a {@code androidx.media3.session.MediaController}) and the player creating
+   * instances (e.g. from a {@code bidmachine.media3.session.MediaController}) and the player creating
    * the request doesn't know the required {@link LocalConfiguration} for playback.
    */
   public static final class RequestMetadata implements Bundleable {

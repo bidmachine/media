@@ -379,7 +379,7 @@ public class DefaultRenderersFactory implements RenderersFactory {
 
     try {
       // Full class names used for constructor args so the LINT rule triggers if any of them move.
-      Class<?> clazz = Class.forName("androidx.media3.decoder.vp9.LibvpxVideoRenderer");
+      Class<?> clazz = Class.forName("bidmachine.media3.decoder.vp9.LibvpxVideoRenderer");
       Constructor<?> constructor =
           clazz.getConstructor(
               long.class,
@@ -404,7 +404,7 @@ public class DefaultRenderersFactory implements RenderersFactory {
 
     try {
       // Full class names used for constructor args so the LINT rule triggers if any of them move.
-      Class<?> clazz = Class.forName("androidx.media3.decoder.av1.Libgav1VideoRenderer");
+      Class<?> clazz = Class.forName("bidmachine.media3.decoder.av1.Libgav1VideoRenderer");
       Constructor<?> constructor =
           clazz.getConstructor(
               long.class,
@@ -471,7 +471,7 @@ public class DefaultRenderersFactory implements RenderersFactory {
     }
 
     try {
-      Class<?> clazz = Class.forName("androidx.media3.decoder.midi.MidiRenderer");
+      Class<?> clazz = Class.forName("bidmachine.media3.decoder.midi.MidiRenderer");
       Constructor<?> constructor = clazz.getConstructor();
       Renderer renderer = (Renderer) constructor.newInstance();
       out.add(extensionRendererIndex++, renderer);
@@ -485,7 +485,7 @@ public class DefaultRenderersFactory implements RenderersFactory {
 
     try {
       // Full class names used for constructor args so the LINT rule triggers if any of them move.
-      Class<?> clazz = Class.forName("androidx.media3.decoder.opus.LibopusAudioRenderer");
+      Class<?> clazz = Class.forName("bidmachine.media3.decoder.opus.LibopusAudioRenderer");
       Constructor<?> constructor =
           clazz.getConstructor(
               android.os.Handler.class,
@@ -504,7 +504,7 @@ public class DefaultRenderersFactory implements RenderersFactory {
 
     try {
       // Full class names used for constructor args so the LINT rule triggers if any of them move.
-      Class<?> clazz = Class.forName("androidx.media3.decoder.flac.LibflacAudioRenderer");
+      Class<?> clazz = Class.forName("bidmachine.media3.decoder.flac.LibflacAudioRenderer");
       Constructor<?> constructor =
           clazz.getConstructor(
               android.os.Handler.class,
@@ -523,7 +523,7 @@ public class DefaultRenderersFactory implements RenderersFactory {
 
     try {
       // Full class names used for constructor args so the LINT rule triggers if any of them move.
-      Class<?> clazz = Class.forName("androidx.media3.decoder.ffmpeg.FfmpegAudioRenderer");
+      Class<?> clazz = Class.forName("bidmachine.media3.decoder.ffmpeg.FfmpegAudioRenderer");
       Constructor<?> constructor =
           clazz.getConstructor(
               android.os.Handler.class,

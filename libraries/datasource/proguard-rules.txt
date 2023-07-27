@@ -6,7 +6,7 @@
 }
 
 # Constructors accessed via reflection in DefaultDataSource
--dontnote androidx.media3.datasource.rtmp.RtmpDataSource
--keepclassmembers class androidx.media3.datasource.rtmp.RtmpDataSource {
+-dontnote bidmachine.media3.datasource.rtmp.RtmpDataSource
+-keepclassmembers class bidmachine.media3.datasource.rtmp.RtmpDataSource {
   <init>();
 }

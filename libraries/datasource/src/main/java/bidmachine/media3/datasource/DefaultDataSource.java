@@ -338,7 +338,7 @@ public final class DefaultDataSource implements DataSource {
   private DataSource getRtmpDataSource() {
     if (rtmpDataSource == null) {
       try {
-        Class<?> clazz = Class.forName("androidx.media3.datasource.rtmp.RtmpDataSource");
+        Class<?> clazz = Class.forName("bidmachine.media3.datasource.rtmp.RtmpDataSource");
         rtmpDataSource = (DataSource) clazz.getConstructor().newInstance();
         addListenersToDataSource(rtmpDataSource);
       } catch (ClassNotFoundException e) {

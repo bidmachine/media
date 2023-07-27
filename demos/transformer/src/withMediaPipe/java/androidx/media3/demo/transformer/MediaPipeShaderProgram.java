@@ -13,11 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package androidx.media3.demo.transformer;
+package bidmachine.media3.demo.transformer;
 
-import static androidx.media3.common.util.Assertions.checkArgument;
-import static androidx.media3.common.util.Assertions.checkState;
-import static androidx.media3.common.util.Assertions.checkStateNotNull;
+import static bidmachine.media3.common.util.Assertions.checkArgument;
+import static bidmachine.media3.common.util.Assertions.checkState;
+import static bidmachine.media3.common.util.Assertions.checkStateNotNull;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 
 import android.content.Context;

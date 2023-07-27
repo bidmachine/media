@@ -8,7 +8,7 @@ playback on Android.
 The easiest way to get the module is to add it as a gradle dependency:
 
 ```gradle
-implementation 'androidx.media3:media3-exoplayer:1.X.X'
+implementation 'bidmachine.media3:media3-exoplayer:1.X.X'
 ```
 
 where `1.X.X` is the version, which must match the version of the other media

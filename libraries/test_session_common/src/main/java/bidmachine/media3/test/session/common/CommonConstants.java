@@ -22,45 +22,45 @@ import android.os.Bundle;
 /** Common constants for testing purpose. */
 public class CommonConstants {
 
-  public static final String SUPPORT_APP_PACKAGE_NAME = "androidx.media3.test.session";
+  public static final String SUPPORT_APP_PACKAGE_NAME = "bidmachine.media3.test.session";
 
   public static final ComponentName MEDIA3_SESSION_PROVIDER_SERVICE =
       new ComponentName(
-          SUPPORT_APP_PACKAGE_NAME, "androidx.media3.session.MediaSessionProviderService");
+          SUPPORT_APP_PACKAGE_NAME, "bidmachine.media3.session.MediaSessionProviderService");
   public static final ComponentName MEDIA3_CONTROLLER_PROVIDER_SERVICE =
       new ComponentName(
-          SUPPORT_APP_PACKAGE_NAME, "androidx.media3.session.MediaControllerProviderService");
+          SUPPORT_APP_PACKAGE_NAME, "bidmachine.media3.session.MediaControllerProviderService");
 
   public static final ComponentName MEDIA_SESSION_COMPAT_PROVIDER_SERVICE =
       new ComponentName(
-          SUPPORT_APP_PACKAGE_NAME, "androidx.media3.session.MediaSessionCompatProviderService");
+          SUPPORT_APP_PACKAGE_NAME, "bidmachine.media3.session.MediaSessionCompatProviderService");
   public static final ComponentName MEDIA_CONTROLLER_COMPAT_PROVIDER_SERVICE =
       new ComponentName(
-          SUPPORT_APP_PACKAGE_NAME, "androidx.media3.session.MediaControllerCompatProviderService");
+          SUPPORT_APP_PACKAGE_NAME, "bidmachine.media3.session.MediaControllerCompatProviderService");
   public static final ComponentName MEDIA_BROWSER_COMPAT_PROVIDER_SERVICE =
       new ComponentName(
-          SUPPORT_APP_PACKAGE_NAME, "androidx.media3.session.MediaBrowserCompatProviderService");
+          SUPPORT_APP_PACKAGE_NAME, "bidmachine.media3.session.MediaBrowserCompatProviderService");
 
   public static final ComponentName MOCK_MEDIA3_SESSION_SERVICE =
       new ComponentName(
-          SUPPORT_APP_PACKAGE_NAME, "androidx.media3.session.MockMediaSessionService");
+          SUPPORT_APP_PACKAGE_NAME, "bidmachine.media3.session.MockMediaSessionService");
   public static final ComponentName MOCK_MEDIA3_LIBRARY_SERVICE =
       new ComponentName(
-          SUPPORT_APP_PACKAGE_NAME, "androidx.media3.session.MockMediaLibraryService");
+          SUPPORT_APP_PACKAGE_NAME, "bidmachine.media3.session.MockMediaLibraryService");
   public static final ComponentName MOCK_MEDIA_BROWSER_SERVICE_COMPAT =
       new ComponentName(
-          SUPPORT_APP_PACKAGE_NAME, "androidx.media3.session.MockMediaBrowserServiceCompat");
+          SUPPORT_APP_PACKAGE_NAME, "bidmachine.media3.session.MockMediaBrowserServiceCompat");
 
   public static final String ACTION_MEDIA3_SESSION =
-      "androidx.media3.test.session.action.MEDIA3_SESSION";
+      "bidmachine.media3.test.session.action.MEDIA3_SESSION";
   public static final String ACTION_MEDIA3_CONTROLLER =
-      "androidx.media3.test.session.action.MEDIA3_CONTROLLER";
+      "bidmachine.media3.test.session.action.MEDIA3_CONTROLLER";
   public static final String ACTION_MEDIA_SESSION_COMPAT =
-      "androidx.media3.test.session.action.MEDIA_SESSION_COMPAT";
+      "bidmachine.media3.test.session.action.MEDIA_SESSION_COMPAT";
   public static final String ACTION_MEDIA_CONTROLLER_COMPAT =
-      "androidx.media3.test.session.action.MEDIA_CONTROLLER_COMPAT";
+      "bidmachine.media3.test.session.action.MEDIA_CONTROLLER_COMPAT";
   public static final String ACTION_MEDIA_BROWSER_COMPAT =
-      "androidx.media3.test.session.action.MEDIA_BROWSER_COMPAT";
+      "bidmachine.media3.test.session.action.MEDIA_BROWSER_COMPAT";
 
   // Keys for arguments.
   public static final String KEY_PLAYER_ERROR = "playerError";

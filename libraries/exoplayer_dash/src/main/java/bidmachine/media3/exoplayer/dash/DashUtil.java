@@ -126,7 +126,7 @@ public final class DashUtil {
    *
    * @param dataSource The source from which the data should be loaded.
    * @param trackType The type of the representation. Typically one of the {@link C
-   *     androidx.media3.common.C} {@code TRACK_TYPE_*} constants.
+   *     bidmachine.media3.common.C} {@code TRACK_TYPE_*} constants.
    * @param representation The representation which initialization chunk belongs to.
    * @param baseUrlIndex The index of the base URL to be picked from the {@link
    *     Representation#baseUrls list of base URLs}.
@@ -157,7 +157,7 @@ public final class DashUtil {
    *
    * @param dataSource The source from which the data should be loaded.
    * @param trackType The type of the representation. Typically one of the {@link C
-   *     androidx.media3.common.C} {@code TRACK_TYPE_*} constants.
+   *     bidmachine.media3.common.C} {@code TRACK_TYPE_*} constants.
    * @param representation The representation which initialization chunk belongs to.
    * @return the sample {@link Format} of the given representation.
    * @throws IOException Thrown when there is an error while loading.
@@ -174,7 +174,7 @@ public final class DashUtil {
    *
    * @param dataSource The source from which the data should be loaded.
    * @param trackType The type of the representation. Typically one of the {@link C
-   *     androidx.media3.common.C} {@code TRACK_TYPE_*} constants.
+   *     bidmachine.media3.common.C} {@code TRACK_TYPE_*} constants.
    * @param representation The representation which initialization chunk belongs to.
    * @param baseUrlIndex The index of the base URL with which to resolve the request URI.
    * @return The {@link ChunkIndex} of the given representation, or null if no initialization or
@@ -206,7 +206,7 @@ public final class DashUtil {
    *
    * @param dataSource The source from which the data should be loaded.
    * @param trackType The type of the representation. Typically one of the {@link C
-   *     androidx.media3.common.C} {@code TRACK_TYPE_*} constants.
+   *     bidmachine.media3.common.C} {@code TRACK_TYPE_*} constants.
    * @param representation The representation which initialization chunk belongs to.
    * @return The {@link ChunkIndex} of the given representation, or null if no initialization or
    *     index data exists.

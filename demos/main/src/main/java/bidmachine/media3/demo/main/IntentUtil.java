@@ -40,8 +40,8 @@ public class IntentUtil {
 
   // Actions.
 
-  public static final String ACTION_VIEW = "androidx.media3.demo.main.action.VIEW";
-  public static final String ACTION_VIEW_LIST = "androidx.media3.demo.main.action.VIEW_LIST";
+  public static final String ACTION_VIEW = "bidmachine.media3.demo.main.action.VIEW";
+  public static final String ACTION_VIEW_LIST = "bidmachine.media3.demo.main.action.VIEW_LIST";
 
   // Activity extras.
   public static final String PREFER_EXTENSION_DECODERS_EXTRA = "prefer_extension_decoders";

@@ -216,7 +216,7 @@ public class MediaLibrarySessionCallbackTest {
 
     LibraryResult<ImmutableList<MediaItem>> recentItem =
         browser.getChildren(
-            "androidx.media3.session.recent.root",
+            "bidmachine.media3.session.recent.root",
             /* page= */ 0,
             /* pageSize= */ 100,
             /* params= */ null);
@@ -258,7 +258,7 @@ public class MediaLibrarySessionCallbackTest {
 
     LibraryResult<ImmutableList<MediaItem>> recentItem =
         browser.getChildren(
-            "androidx.media3.session.recent.root",
+            "bidmachine.media3.session.recent.root",
             /* page= */ 0,
             /* pageSize= */ 100,
             /* params= */ null);
@@ -295,7 +295,7 @@ public class MediaLibrarySessionCallbackTest {
 
     LibraryResult<ImmutableList<MediaItem>> recentItem =
         browser.getChildren(
-            "androidx.media3.session.recent.root",
+            "bidmachine.media3.session.recent.root",
             /* page= */ 0,
             /* pageSize= */ 100,
             /* params= */ null);
@@ -333,7 +333,7 @@ public class MediaLibrarySessionCallbackTest {
 
     LibraryResult<ImmutableList<MediaItem>> recentItem =
         browser.getChildren(
-            "androidx.media3.session.recent.root",
+            "bidmachine.media3.session.recent.root",
             /* page= */ 0,
             /* pageSize= */ 100,
             /* params= */ null);
@@ -376,7 +376,7 @@ public class MediaLibrarySessionCallbackTest {
 
     LibraryResult<ImmutableList<MediaItem>> recentItem =
         browser.getChildren(
-            "androidx.media3.session.recent.root",
+            "bidmachine.media3.session.recent.root",
             /* page= */ 0,
             /* pageSize= */ 100,
             /* params= */ null);
@@ -387,7 +387,7 @@ public class MediaLibrarySessionCallbackTest {
     assertThat(latch.await(TIMEOUT_MS, MILLISECONDS)).isTrue();
     assertThat(recentItem.resultCode).isEqualTo(LibraryResult.RESULT_SUCCESS);
     assertThat(Lists.transform(recentItem.value, (item) -> item.mediaId))
-        .containsExactly("androidx.media3.session.recent.item");
+        .containsExactly("bidmachine.media3.session.recent.item");
     assertThat(children.value).isEqualTo(mediaItems);
   }
 }

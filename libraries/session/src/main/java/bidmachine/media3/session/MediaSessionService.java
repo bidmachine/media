@@ -69,7 +69,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
  *   android:foregroundServiceType="mediaPlayback"
  *   android:exported="true">
  *   <intent-filter>
- *     <action android:name="androidx.media3.session.MediaSessionService"/>
+ *     <action android:name="bidmachine.media3.session.MediaSessionService"/>
  *   </intent-filter>
  * </service>
  * }</pre>
@@ -155,7 +155,7 @@ public abstract class MediaSessionService extends Service {
   }
 
   /** The action for {@link Intent} filter that must be declared by the service. */
-  public static final String SERVICE_INTERFACE = "androidx.media3.session.MediaSessionService";
+  public static final String SERVICE_INTERFACE = "bidmachine.media3.session.MediaSessionService";
 
   private static final String TAG = "MSSImpl";
 

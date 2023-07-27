@@ -115,7 +115,7 @@ public class DefaultDownloaderFactory implements DownloaderFactory {
       array.put(
           C.CONTENT_TYPE_DASH,
           getDownloaderConstructor(
-              Class.forName("androidx.media3.exoplayer.dash.offline.DashDownloader")));
+              Class.forName("bidmachine.media3.exoplayer.dash.offline.DashDownloader")));
     } catch (ClassNotFoundException e) {
       // Expected if the app was built without the DASH module.
     }
@@ -124,7 +124,7 @@ public class DefaultDownloaderFactory implements DownloaderFactory {
       array.put(
           C.CONTENT_TYPE_HLS,
           getDownloaderConstructor(
-              Class.forName("androidx.media3.exoplayer.hls.offline.HlsDownloader")));
+              Class.forName("bidmachine.media3.exoplayer.hls.offline.HlsDownloader")));
     } catch (ClassNotFoundException e) {
       // Expected if the app was built without the HLS module.
     }
@@ -132,7 +132,7 @@ public class DefaultDownloaderFactory implements DownloaderFactory {
       array.put(
           C.CONTENT_TYPE_SS,
           getDownloaderConstructor(
-              Class.forName("androidx.media3.exoplayer.smoothstreaming.offline.SsDownloader")));
+              Class.forName("bidmachine.media3.exoplayer.smoothstreaming.offline.SsDownloader")));
     } catch (ClassNotFoundException e) {
       // Expected if the app was built without the SmoothStreaming module.
     }

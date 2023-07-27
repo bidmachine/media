@@ -53,7 +53,7 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
  * <pre>{@code
  * <service android:name="NameOfYourService">
  *   <intent-filter>
- *     <action android:name="androidx.media3.session.MediaLibraryService">
+ *     <action android:name="bidmachine.media3.session.MediaLibraryService">
  *   </intent-filter>
  * </service>
  * }</pre>
@@ -66,7 +66,7 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 public abstract class MediaLibraryService extends MediaSessionService {
 
   /** The action for {@link Intent} filter that must be declared by the service. */
-  public static final String SERVICE_INTERFACE = "androidx.media3.session.MediaLibraryService";
+  public static final String SERVICE_INTERFACE = "bidmachine.media3.session.MediaLibraryService";
 
   /**
    * An extended {@link MediaSession} for the {@link MediaLibraryService}. Build an instance with

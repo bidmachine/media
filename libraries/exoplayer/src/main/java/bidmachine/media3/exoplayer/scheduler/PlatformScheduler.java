@@ -39,7 +39,7 @@ import bidmachine.media3.common.util.Util;
  * <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
  * <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
  *
- * <service android:name="androidx.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
+ * <service android:name="bidmachine.media3.exoplayer.scheduler.PlatformScheduler$PlatformSchedulerService"
  *     android:permission="android.permission.BIND_JOB_SERVICE"
  *     android:exported="true"/>
  * }</pre>

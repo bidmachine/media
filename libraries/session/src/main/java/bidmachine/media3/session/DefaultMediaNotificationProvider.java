@@ -220,7 +220,7 @@ public class DefaultMediaNotificationProvider implements MediaNotification.Provi
    * Notification.MediaStyle#setShowActionsInCompactView(int...) compact view}.
    */
   public static final String COMMAND_KEY_COMPACT_VIEW_INDEX =
-      "androidx.media3.session.command.COMPACT_VIEW_INDEX";
+      "bidmachine.media3.session.command.COMPACT_VIEW_INDEX";
 
   /** The default ID used for the {@link MediaNotification#notificationId}. */
   public static final int DEFAULT_NOTIFICATION_ID = 1001;

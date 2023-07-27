@@ -55,7 +55,7 @@ public final class MainActivity extends Activity {
       "https://storage.googleapis.com/exoplayer-test-media-1/mkv/android-screens-lavf-56.36.100-aac-avc-main-1280x720.mkv";
   private static final String SURFACE_CONTROL_NAME = "surfacedemo";
 
-  private static final String ACTION_VIEW = "androidx.media3.demo.surface.action.VIEW";
+  private static final String ACTION_VIEW = "bidmachine.media3.demo.surface.action.VIEW";
   private static final String EXTENSION_EXTRA = "extension";
   private static final String DRM_SCHEME_EXTRA = "drm_scheme";
   private static final String DRM_LICENSE_URL_EXTRA = "drm_license_url";

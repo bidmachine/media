@@ -16,8 +16,8 @@
 package bidmachine.media3.session;
 
 import static bidmachine.media3.session.MediaTestUtils.createTimeline;
-import static androidx.media3.session.MediaUtils.createPlayerCommandsWith;
-import static androidx.media3.session.MediaUtils.createPlayerCommandsWithout;
+import static bidmachine.media3.session.MediaUtils.createPlayerCommandsWith;
+import static bidmachine.media3.session.MediaUtils.createPlayerCommandsWithout;
 import static bidmachine.media3.test.session.common.CommonConstants.DEFAULT_TEST_NAME;
 import static bidmachine.media3.test.session.common.CommonConstants.MOCK_MEDIA3_LIBRARY_SERVICE;
 import static bidmachine.media3.test.session.common.CommonConstants.MOCK_MEDIA3_SESSION_SERVICE;

@@ -30,7 +30,7 @@ import bidmachine.media3.common.util.UnstableApi;
 @UnstableApi
 public interface GlObjectsProvider {
   /**
-   * @deprecated Please use {@code DefaultGlObjectsProvider} in {@code androidx.media3.effect}.
+   * @deprecated Please use {@code DefaultGlObjectsProvider} in {@code bidmachine.media3.effect}.
    */
   @Deprecated
   GlObjectsProvider DEFAULT =

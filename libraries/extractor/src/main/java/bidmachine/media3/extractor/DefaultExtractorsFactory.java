@@ -74,14 +74,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   <li>AMR ({@link AmrExtractor})
  *   <li>FLAC
  *       <ul>
- *         <li>If available, the FLAC extension's {@code androidx.media3.decoder.flac.FlacExtractor}
+ *         <li>If available, the FLAC extension's {@code bidmachine.media3.decoder.flac.FlacExtractor}
  *             is used.
  *         <li>Otherwise, the core {@link FlacExtractor} is used. Note that Android devices do not
  *             generally include a FLAC decoder before API 27. This can be worked around by using
  *             the FLAC extension or the FFmpeg extension.
  *       </ul>
  *   <li>JPEG ({@link JpegExtractor})
- *   <li>MIDI, if available, the MIDI extension's {@code androidx.media3.decoder.midi.MidiExtractor}
+ *   <li>MIDI, if available, the MIDI extension's {@code bidmachine.media3.decoder.midi.MidiExtractor}
  *       is used.
  * </ul>
  */
@@ -211,7 +211,7 @@ public final class DefaultExtractorsFactory implements ExtractorsFactory {
 
   /**
    * Sets flags for {@link FlacExtractor} instances created by the factory. The flags are also used
-   * by {@code androidx.media3.decoder.flac.FlacExtractor} instances if the FLAC extension is being
+   * by {@code bidmachine.media3.decoder.flac.FlacExtractor} instances if the FLAC extension is being
    * used.
    *
    * @see FlacExtractor#FlacExtractor(int)
@@ -468,7 +468,7 @@ public final class DefaultExtractorsFactory implements ExtractorsFactory {
 
   private static Constructor<? extends Extractor> getMidiExtractorConstructor()
       throws ClassNotFoundException, NoSuchMethodException {
-    return Class.forName("androidx.media3.decoder.midi.MidiExtractor")
+    return Class.forName("bidmachine.media3.decoder.midi.MidiExtractor")
         .asSubclass(Extractor.class)
         .getConstructor();
   }
@@ -482,11 +482,11 @@ public final class DefaultExtractorsFactory implements ExtractorsFactory {
     @SuppressWarnings("nullness:argument")
     boolean isFlacNativeLibraryAvailable =
         Boolean.TRUE.equals(
-            Class.forName("androidx.media3.decoder.flac.FlacLibrary")
+            Class.forName("bidmachine.media3.decoder.flac.FlacLibrary")
                 .getMethod("isAvailable")
                 .invoke(/* obj= */ null));
     if (isFlacNativeLibraryAvailable) {
-      return Class.forName("androidx.media3.decoder.flac.FlacExtractor")
+      return Class.forName("bidmachine.media3.decoder.flac.FlacExtractor")
           .asSubclass(Extractor.class)
           .getConstructor(int.class);
     }

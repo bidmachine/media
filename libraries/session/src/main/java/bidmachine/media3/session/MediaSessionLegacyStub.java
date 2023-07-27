@@ -111,7 +111,7 @@ import org.checkerframework.checker.nullness.compatqual.NullableType;
 
   private static final int PENDING_INTENT_FLAG_MUTABLE =
       Util.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0;
-  private static final String DEFAULT_MEDIA_SESSION_TAG_PREFIX = "androidx.media3.session.id";
+  private static final String DEFAULT_MEDIA_SESSION_TAG_PREFIX = "bidmachine.media3.session.id";
   private static final String DEFAULT_MEDIA_SESSION_TAG_DELIM = ".";
 
   // Used to call onDisconnected() after the timeout.

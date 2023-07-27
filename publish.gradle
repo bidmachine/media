@@ -26,7 +26,7 @@ afterEvaluate {
             publications {
                 release(MavenPublication) {
                     from components.release
-                    groupId = 'androidx.media3'
+                    groupId = 'bidmachine.media3'
                     artifactId = findProperty('releaseArtifactId') ?: ''
                     version = findProperty('releaseVersion') ?: ''
                     configurations.create("sourcesElement") { variant ->

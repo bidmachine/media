@@ -52,9 +52,9 @@ For example, to depend on ExoPlayer with DASH playback support and UI components
 you can add dependencies on the modules like this:
 
 ```gradle
-implementation 'androidx.media3:media3-exoplayer:1.X.X'
-implementation 'androidx.media3:media3-exoplayer-dash:1.X.X'
-implementation 'androidx.media3:media3-ui:1.X.X'
+implementation 'bidmachine.media3:media3-exoplayer:1.X.X'
+implementation 'bidmachine.media3:media3-exoplayer-dash:1.X.X'
+implementation 'bidmachine.media3:media3-ui:1.X.X'
 ```
 
 where `1.X.X` is your preferred version. All modules must be the same version.

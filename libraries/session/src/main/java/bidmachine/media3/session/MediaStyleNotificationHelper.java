@@ -40,7 +40,7 @@ import org.checkerframework.checker.nullness.compatqual.NullableType;
 @UnstableApi
 public class MediaStyleNotificationHelper {
 
-  public static final String EXTRA_MEDIA3_SESSION = "androidx.media3.session";
+  public static final String EXTRA_MEDIA3_SESSION = "bidmachine.media3.session";
 
   private MediaStyleNotificationHelper() {}
 

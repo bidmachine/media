@@ -165,7 +165,7 @@ public abstract class Timeline implements Bundleable {
 
     private static final MediaItem PLACEHOLDER_MEDIA_ITEM =
         new MediaItem.Builder()
-            .setMediaId("androidx.media3.common.Timeline")
+            .setMediaId("bidmachine.media3.common.Timeline")
             .setUri(Uri.EMPTY)
             .build();
 

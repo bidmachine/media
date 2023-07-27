@@ -50,11 +50,11 @@ import bidmachine.media3.common.util.Util;
 @UnstableApi
 /* package */ final class DefaultActionFactory implements MediaNotification.ActionFactory {
 
-  private static final String ACTION_CUSTOM = "androidx.media3.session.CUSTOM_NOTIFICATION_ACTION";
+  private static final String ACTION_CUSTOM = "bidmachine.media3.session.CUSTOM_NOTIFICATION_ACTION";
   private static final String EXTRAS_KEY_ACTION_CUSTOM =
-      "androidx.media3.session.EXTRAS_KEY_CUSTOM_NOTIFICATION_ACTION";
+      "bidmachine.media3.session.EXTRAS_KEY_CUSTOM_NOTIFICATION_ACTION";
   public static final String EXTRAS_KEY_ACTION_CUSTOM_EXTRAS =
-      "androidx.media3.session.EXTRAS_KEY_CUSTOM_NOTIFICATION_ACTION_EXTRAS";
+      "bidmachine.media3.session.EXTRAS_KEY_CUSTOM_NOTIFICATION_ACTION_EXTRAS";
 
   private final Service service;
 

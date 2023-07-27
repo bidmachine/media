@@ -52,7 +52,7 @@ import java.util.concurrent.Future;
 
 /* package */ class MediaLibrarySessionImpl extends MediaSessionImpl {
 
-  private static final String RECENT_LIBRARY_ROOT_MEDIA_ID = "androidx.media3.session.recent.root";
+  private static final String RECENT_LIBRARY_ROOT_MEDIA_ID = "bidmachine.media3.session.recent.root";
   private static final String SYSTEM_UI_PACKAGE_NAME = "com.android.systemui";
 
   private final MediaLibraryService.MediaLibrarySession instance;
@@ -178,7 +178,7 @@ import java.util.concurrent.Future;
               LibraryResult.ofItemList(
                   ImmutableList.of(
                       new MediaItem.Builder()
-                          .setMediaId("androidx.media3.session.recent.item")
+                          .setMediaId("bidmachine.media3.session.recent.item")
                           .setMediaMetadata(
                               new MediaMetadata.Builder()
                                   .setIsBrowsable(false)

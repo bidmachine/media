@@ -2347,7 +2347,7 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
             || setRotationMethod == null
             || buildScaleAndRotateTransformationMethod == null) {
           Class<?> scaleAndRotateTransformationBuilderClass =
-              Class.forName("androidx.media3.effect.ScaleAndRotateTransformation$Builder");
+              Class.forName("bidmachine.media3.effect.ScaleAndRotateTransformation$Builder");
           scaleAndRotateTransformationBuilderConstructor =
               scaleAndRotateTransformationBuilderClass.getConstructor();
           setRotationMethod =
@@ -2358,7 +2358,7 @@ public class MediaCodecVideoRenderer extends MediaCodecRenderer {
         if (videoFrameProcessorFactoryBuilderConstructor == null
             || buildVideoFrameProcessorFactoryMethod == null) {
           Class<?> videoFrameProcessorFactoryBuilderClass =
-              Class.forName("androidx.media3.effect.DefaultVideoFrameProcessor$Factory$Builder");
+              Class.forName("bidmachine.media3.effect.DefaultVideoFrameProcessor$Factory$Builder");
           videoFrameProcessorFactoryBuilderConstructor =
               videoFrameProcessorFactoryBuilderClass.getConstructor();
           buildVideoFrameProcessorFactoryMethod =

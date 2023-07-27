@@ -148,7 +148,7 @@ public final class PlaybackOutput implements Dumper.Dumpable {
         || entry instanceof IcyHeaders
         || entry instanceof IcyInfo
         || entry instanceof SpliceCommand
-        || "androidx.media3.exoplayer.hls.HlsTrackMetadataEntry"
+        || "bidmachine.media3.exoplayer.hls.HlsTrackMetadataEntry"
             .equals(entry.getClass().getCanonicalName())) {
       return entry.toString();
     } else {

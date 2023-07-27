@@ -47,7 +47,7 @@ import java.util.Objects;
  *
  * <pre>
  * &lt;receiver
- *     android:name="androidx.media3.session.MediaButtonReceiver"
+ *     android:name="bidmachine.media3.session.MediaButtonReceiver"
  *     android:exported="true"&gt;
  *   &lt;intent-filter&gt;
  *     &lt;action android:name="android.intent.action.MEDIA_BUTTON" /&gt;
@@ -94,7 +94,7 @@ import java.util.Objects;
  * <pre>
  * &lt;service android:name="com.example.android.MediaPlaybackService" &gt;
  *   &lt;intent-filter&gt;
- *     &lt;action android:name="androidx.media3.session.MediaLibraryService" /&gt;
+ *     &lt;action android:name="bidmachine.media3.session.MediaLibraryService" /&gt;
  *   &lt;/intent-filter&gt;
  * &lt;/service&gt;
  * </pre>

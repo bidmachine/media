@@ -162,7 +162,7 @@ This release contains the following changes since the
     *   Add helper method `MediaSession.getControllerForCurrentRequest` to
         obtain information about the controller that is currently calling
         a`Player` method.
-    *   Add `androidx.media3.session.MediaButtonReceiver` to enable apps to
+    *   Add `bidmachine.media3.session.MediaButtonReceiver` to enable apps to
         implement playback resumption with media button events sent by, for
         example, a Bluetooth headset
         ([#167](https://github.com/androidx/media/issues/167)).
@@ -566,8 +566,8 @@ This release corresponds to the
     *   Make `AudioTrackBufferSizeProvider` a public interface.
     *   Add `ExoPlayer.setPreferredAudioDevice` to set the preferred audio
         output device ([#135](https://github.com/androidx/media/issues/135)).
-    *   Rename `androidx.media3.exoplayer.audio.AudioProcessor` to
-        `androidx.media3.common.audio.AudioProcessor`.
+    *   Rename `bidmachine.media3.exoplayer.audio.AudioProcessor` to
+        `bidmachine.media3.common.audio.AudioProcessor`.
     *   Map 8-channel and 12-channel audio to the 7.1 and 7.1.4 channel masks
         respectively on all Android versions
         ([#10701](https://github.com/google/ExoPlayer/issues/10701)).
@@ -1254,7 +1254,7 @@ implementing media use cases, including:
 
 ExoPlayer was previously hosted in a separate
 [ExoPlayer GitHub project](https://github.com/google/ExoPlayer). In AndroidX
-Media its package name is `androidx.media3.exoplayer`. We plan to continue to
+Media its package name is `bidmachine.media3.exoplayer`. We plan to continue to
 maintain and release the ExoPlayer GitHub project for a while to give apps time
 to migrate. AndroidX Media has replacements for all the ExoPlayer modules,
 except for the legacy media2 and mediasession extensions, which are together
