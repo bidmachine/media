@@ -55,3 +55,7 @@ ext {
     javadocTitle = 'AV1 extension'
 }
 apply from: '../../javadoc_library.gradle'
+apply from: rootProject.file('renamePackage.gradle')
+android.libraryVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}

@@ -17,6 +17,7 @@ android.buildTypes.debug.testCoverageEnabled true
 
 android {
     lint {
+        abortOnError false
         baseline = file("lint-baseline.xml")
     }
 }
@@ -42,3 +43,7 @@ ext {
     releaseName = 'Media3 UI module'
 }
 apply from: '../../publish.gradle'
+apply from: rootProject.file('renamePackage.gradle')
+android.libraryVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}

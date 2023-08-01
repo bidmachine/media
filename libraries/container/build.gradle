@@ -53,3 +53,7 @@ ext {
     releaseName = 'Media3 Container module'
 }
 apply from: '../../publish.gradle'
+apply from: rootProject.file('renamePackage.gradle')
+android.libraryVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}

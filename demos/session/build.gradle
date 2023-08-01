@@ -69,3 +69,8 @@ dependencies {
     implementation project(modulePrefix + 'lib-ui')
     implementation project(modulePrefix + 'lib-session')
 }
+
+apply from: rootProject.file('renamePackage.gradle')
+android.applicationVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}

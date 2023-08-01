@@ -92,3 +92,8 @@ dependencies {
     withMediaPipeImplementation 'com.google.code.findbugs:jsr305:latest.release'
     withMediaPipeImplementation 'com.google.protobuf:protobuf-javalite:3.19.1'
 }
+
+apply from: rootProject.file('renamePackage.gradle')
+android.applicationVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}

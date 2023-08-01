@@ -66,3 +66,7 @@ dependencies {
 }
 
 apply plugin: 'com.google.android.gms.strict-version-matcher-plugin'
+apply from: rootProject.file('renamePackage.gradle')
+android.applicationVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}

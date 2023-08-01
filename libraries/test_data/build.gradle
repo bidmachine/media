@@ -13,3 +13,10 @@
 // limitations under the License.
 apply from: "$gradle.ext.androidxMediaSettingsDir/common_library_config.gradle"
 
+android {
+}
+apply from: rootProject.file('renamePackage.gradle')
+android.libraryVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}
+

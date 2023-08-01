@@ -36,6 +36,10 @@ ext {
     javadocTitle = 'Database module'
 }
 apply from: '../../javadoc_library.gradle'
+apply from: rootProject.file('renamePackage.gradle')
+android.libraryVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}
 
 ext {
     releaseArtifactId = 'media3-database'

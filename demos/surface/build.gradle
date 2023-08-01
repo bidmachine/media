@@ -53,3 +53,8 @@ dependencies {
     implementation project(modulePrefix + 'lib-ui')
     implementation 'androidx.annotation:annotation:' + androidxAnnotationVersion
 }
+
+apply from: rootProject.file('renamePackage.gradle')
+android.applicationVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}

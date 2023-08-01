@@ -22,3 +22,10 @@ dependencies {
     androidTestImplementation project(modulePrefix + 'lib-exoplayer-hls')
     androidTestImplementation project(modulePrefix + 'test-utils')
 }
+
+android {
+}
+apply from: rootProject.file('renamePackage.gradle')
+android.libraryVariants.all { variant ->
+    variant.javaCompile.dependsOn(renameAllPackages)
+}
