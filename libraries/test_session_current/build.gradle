@@ -50,9 +50,9 @@ dependencies {
     androidTestImplementation 'androidx.test:runner:' + androidxTestRunnerVersion
 }
 
-android {
-}
 apply from: rootProject.file('renamePackage.gradle')
-android.applicationVariants.all { variant ->
-    variant.javaCompile.dependsOn(renameAllPackages)
+afterEvaluate {
+    android.applicationVariants.all { variant ->
+        variant.javaCompile.dependsOn(renameAllPackages)
+    }
 }

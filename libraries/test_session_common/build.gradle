@@ -20,9 +20,9 @@ dependencies {
     implementation 'androidx.test:core:' + androidxTestCoreVersion
 }
 
-android {
-}
 apply from: rootProject.file('renamePackage.gradle')
-android.libraryVariants.all { variant ->
-    variant.javaCompile.dependsOn(renameAllPackages)
+afterEvaluate {
+    android.libraryVariants.all { variant ->
+        variant.javaCompile.dependsOn(renameAllPackages)
+    }
 }

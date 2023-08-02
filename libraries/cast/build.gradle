@@ -13,9 +13,6 @@
 // limitations under the License.
 apply from: "$gradle.ext.androidxMediaSettingsDir/common_library_config.gradle"
 
-android {
-}
-
 dependencies {
     api 'com.google.android.gms:play-services-cast-framework:21.3.0'
     implementation 'androidx.annotation:annotation:' + androidxAnnotationVersion
@@ -31,8 +28,10 @@ ext {
     javadocTitle = 'Cast extension'
 }
 apply from: rootProject.file('renamePackage.gradle')
-android.libraryVariants.all { variant ->
-    variant.javaCompile.dependsOn(renameAllPackages)
+afterEvaluate {
+    android.libraryVariants.all { variant ->
+        variant.javaCompile.dependsOn(renameAllPackages)
+    }
 }
 
 ext {
