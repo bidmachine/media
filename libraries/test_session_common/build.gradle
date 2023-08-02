@@ -19,10 +19,3 @@ dependencies {
     implementation 'androidx.annotation:annotation:' + androidxAnnotationVersion
     implementation 'androidx.test:core:' + androidxTestCoreVersion
 }
-
-apply from: rootProject.file('renamePackage.gradle')
-afterEvaluate {
-    android.libraryVariants.all { variant ->
-        variant.javaCompile.dependsOn(renameAllPackages)
-    }
-}

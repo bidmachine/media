@@ -27,12 +27,6 @@ dependencies {
 ext {
     javadocTitle = 'Cast extension'
 }
-apply from: rootProject.file('renamePackage.gradle')
-afterEvaluate {
-    android.libraryVariants.all { variant ->
-        variant.javaCompile.dependsOn(renameAllPackages)
-    }
-}
 
 ext {
     releaseArtifactId = 'media3-cast'
