@@ -13,6 +13,7 @@
 // limitations under the License.
 apply from: "$gradle.ext.androidxMediaSettingsDir/constants.gradle"
 apply plugin: 'com.android.library'
+apply from: rootProject.file('renamePackage.gradle')
 
 android {
     compileSdkVersion project.ext.compileSdkVersion

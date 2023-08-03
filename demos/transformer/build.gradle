@@ -15,6 +15,7 @@
  */
 apply from: '../../constants.gradle'
 apply plugin: 'com.android.application'
+apply from: rootProject.file('renamePackage.gradle')
 
 android {
     compileSdkVersion project.ext.compileSdkVersion
