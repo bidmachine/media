@@ -1,53 +1,64 @@
+def oldPackagePath = "androidx/media3"
+def newPackagePath = "io/bidmachine/media3"
+def oldPackageName = "androidx.media3"
+def newPackageName = "io.bidmachine.media3"
+def resPrefix = "bm_"
+
 // Создаем новую задачу для переименования пакета исходных файлов
 task renamePackageJava(type: Copy) {
-    def oldPackageName = "androidx/media3"
-    def newPackageName = "io/bidmachine/media3"
+    def oldJavaPackagePath = "${projectDir}/src/main/java/${oldPackagePath}".toString()
+    def newJavaPackagePath = "${projectDir}/src/main/java/${newPackagePath}".toString()
 
     // Устанавливаем путь к исходным файлам с текущим пакетом
-    from("${projectDir}/src/main/java/${oldPackageName}".toString())
-
+    from(oldJavaPackagePath)
     // Устанавливаем путь к исходным файлам с новым пакетом
-    into("${projectDir}/src/main/java/${newPackageName}".toString())
-
+    into(newJavaPackagePath)
     // Переименовываем файлы, меняя пакет
     eachFile { details ->
         def filePath = details.path
-        def oldPackagePath = "${projectDir}/src/main/java/${oldPackageName}".toString()
-        println("Renaming file: ${filePath} from package: ${oldPackagePath}")
-        details.path = filePath.replace(oldPackageName, newPackageName)
+        println("Renaming file: ${filePath} from package: ${oldJavaPackagePath}")
+        details.path = filePath.replace(oldPackagePath, newPackagePath)
 
         // Меняем пакет внутри Java файлов
         if (details.file.isFile() && (details.file.name.endsWith(".java") || details.file.name.endsWith(".kt"))) {
-            details.file.text = details.file.text.replace("${oldPackageName.replace('/', '.')}", "${newPackageName.replace('/', '.')}")
+            details.file.text = details.file.text.replace(oldPackageName, newPackageName)
         }
     }
 
-    def oldPackageName1 = "androidx.media3"
-    def newPackageName1 = "io.bidmachine.media3"
     // Обновляем пакет в манифесте
     doLast {
         def manifestFile = file("${projectDir}/src/main/AndroidManifest.xml")
         String manifestContent = manifestFile.text
-        manifestContent = manifestContent.replace(oldPackageName1, newPackageName1)
+        manifestContent = manifestContent.replace(oldPackageName, newPackageName)
         manifestFile.text = manifestContent
-        println("Updated package in AndroidManifest.xml: ${oldPackageName} to ${newPackageName}")
+        println("Updated package in AndroidManifest.xml: ${oldPackagePath} to ${newPackagePath}")
     }
 
     // Обновляем пакет в XML файлах
     doLast {
-        def xmlFiles = fileTree(dir: "${projectDir}/src/main/res", include: '**/*.xml')
-        xmlFiles.each { xmlFile ->
-            def xmlContent = xmlFile.text
-            xmlContent = xmlContent.replace(oldPackageName1, newPackageName1)
-            xmlFile.text = xmlContent
-            println("Updated package in ${xmlFile}")
+        fileTree(dir: "${projectDir}/src/main/res/layout", include: '**/*.xml').each { xmlFile ->
+            if (xmlFile.text.contains(oldPackageName)) {
+                def xmlContent = xmlFile.text
+                xmlContent = xmlContent.replace(oldPackageName, newPackageName)
+                xmlFile.text = xmlContent
+                println("Updated package in ${xmlFile}")
+
+                def resFileName = xmlFile.name.split("\\.")[0]
+                def newResFileName = "$resPrefix$resFileName"
+                xmlFile.renameTo(new File(xmlFile.parentFile, "${newResFileName}.xml"))
+
+                fileTree(dir: newJavaPackagePath, includes: ['**/*.java', '**/*.kt']).each { classFile ->
+                    println("Test Details ${classFile.path}")
+
+                    classFile.text = classFile.text.replace("R.layout.$resFileName", "R.layout.$newResFileName")
+                }
+            }
         }
     }
 
     // Удаляем старые файлы из старого пакета
     doLast {
-        def oldPackagePath = "${projectDir}/src/main/java/${oldPackageName}".toString()
-        fileTree(dir: oldPackagePath).visit { FileVisitDetails details ->
+        fileTree(dir: oldJavaPackagePath).visit { FileVisitDetails details ->
             details.file.delete()
         }
     }
@@ -55,37 +66,32 @@ task renamePackageJava(type: Copy) {
 
 // Создаем новую задачу для переименования пакета исходных файлов
 task renamePackageAidl(type: Copy) {
-    def oldPackageName = "androidx/media3"
-    def newPackageName = "io/bidmachine/media3"
+    def oldAidlPackagePath = "${projectDir}/src/main/aidl/${oldPackagePath}".toString()
+    def newAidlPackagePath = "${projectDir}/src/main/aidl/${newPackagePath}".toString()
 
     // Устанавливаем путь к исходным файлам с текущим пакетом
-    from("${projectDir}/src/main/aidl/${oldPackageName}".toString())
-
+    from(oldAidlPackagePath)
     // Устанавливаем путь к исходным файлам с новым пакетом
-    into("${projectDir}/src/main/aidl/${newPackageName}".toString())
+    into(newAidlPackagePath)
     // Обработка файлов aidl
     eachFile { details ->
         def filePath = details.path
-        def oldPackagePath = "${projectDir}/src/main/aidl/${oldPackageName}".toString()
-        def newPackagePath = "${projectDir}/src/main/aidl/${newPackageName}".toString()
-        println("Renaming file: ${filePath}\n from package: ${oldPackagePath}\n to package ${newPackagePath}")
-        details.path = filePath.replace(oldPackageName, newPackageName)
+        println("Renaming file: ${filePath}\n from package: ${oldAidlPackagePath}\n to package ${newAidlPackagePath}")
+        details.path = filePath.replace(oldPackagePath, newPackagePath)
 
         // Меняем пакет внутри Aidl файлов
         if (details.file.isFile() && details.file.name.endsWith(".aidl")) {
-            details.file.text = details.file.text.replace("${oldPackageName.replace('/', '.')}", "${newPackageName.replace('/', '.')}")
+            details.file.text = details.file.text.replace(oldPackageName, newPackageName)
         }
     }
 
-    def oldPackageName1 = "androidx.media3"
-    def newPackageName1 = "io.bidmachine.media3"
     // Обновляем пакет в манифесте
     doLast {
         def manifestFile = file("${projectDir}/src/main/AndroidManifest.xml")
         String manifestContent = manifestFile.text
-        manifestContent = manifestContent.replace(oldPackageName1, newPackageName1)
+        manifestContent = manifestContent.replace(oldPackageName, newPackageName)
         manifestFile.text = manifestContent
-        println("Updated package in AndroidManifest.xml: ${oldPackageName} to ${newPackageName}")
+        println("Updated package in AndroidManifest.xml: ${oldPackagePath} to ${newPackagePath}")
     }
 
     // Обновляем пакет в других файлах проекта (при необходимости)
@@ -94,8 +100,7 @@ task renamePackageAidl(type: Copy) {
 
     // Удаляем старые файлы из старого пакета
     doLast {
-        def oldPackagePath = "${projectDir}/src/main/aidl/${oldPackageName}".toString()
-        fileTree(dir: oldPackagePath).visit { FileVisitDetails details ->
+        fileTree(dir: oldAidlPackagePath).visit { FileVisitDetails details ->
             details.file.delete()
         }
     }
@@ -103,25 +108,22 @@ task renamePackageAidl(type: Copy) {
 
 // Создаем новую задачу для переименования пакета исходных файлов
 task renamePackageTest(type: Copy) {
-    def oldPackageName = "androidx/media3"
-    def newPackageName = "io/bidmachine/media3"
+    def oldTestJavaPackagePath = "${projectDir}/src/test/java/${oldPackagePath}".toString()
+    def newTestJavaPackagePath = "${projectDir}/src/test/java/${newPackagePath}".toString()
 
     // Устанавливаем путь к исходным файлам с текущим пакетом
-    from("${projectDir}/src/test/java/${oldPackageName}".toString())
-
+    from(oldTestJavaPackagePath)
     // Устанавливаем путь к исходным файлам с новым пакетом
-    into("${projectDir}/src/test/java/${newPackageName}".toString())
-
+    into(newTestJavaPackagePath)
     // Переименовываем файлы, меняя пакет
     eachFile { details ->
         def filePath = details.path
-        def oldPackagePath = "${projectDir}/src/test/java/${oldPackageName}".toString()
-        println("Renaming file: ${filePath} from package: ${oldPackagePath}")
-        details.path = filePath.replace(oldPackageName, newPackageName)
+        println("Renaming file: ${filePath} from package: ${oldTestJavaPackagePath}")
+        details.path = filePath.replace(oldPackagePath, newPackagePath)
 
         // Меняем пакет внутри Java файлов
         if (details.file.isFile() && (details.file.name.endsWith(".java") || details.file.name.endsWith(".kt"))) {
-            details.file.text = details.file.text.replace("${oldPackageName.replace('/', '.')}", "${newPackageName.replace('/', '.')}")
+            details.file.text = details.file.text.replace(oldPackageName, newPackageName)
         }
     }
 
@@ -131,8 +133,7 @@ task renamePackageTest(type: Copy) {
 
     // Удаляем старые файлы из старого пакета
     doLast {
-        def oldPackagePath = "${projectDir}/src/test/java/${oldPackageName}".toString()
-        fileTree(dir: oldPackagePath).visit { FileVisitDetails details ->
+        fileTree(dir: oldTestJavaPackagePath).visit { FileVisitDetails details ->
             details.file.delete()
         }
     }
@@ -140,37 +141,32 @@ task renamePackageTest(type: Copy) {
 
 // Создаем новую задачу для переименования пакета исходных файлов
 task renamePackageAndroidTest(type: Copy) {
-    def oldPackageName = "androidx/media3"
-    def newPackageName = "io/bidmachine/media3"
+    def oldAndroidTestJavaPackagePath = "${projectDir}/src/androidTest/java/${oldPackagePath}".toString()
+    def newAndroidTestJavaPackagePath = "${projectDir}/src/androidTest/java/${newPackagePath}".toString()
 
     // Устанавливаем путь к исходным файлам с текущим пакетом
-    from("${projectDir}/src/androidTest/java/${oldPackageName}".toString())
-
+    from(oldAndroidTestJavaPackagePath)
     // Устанавливаем путь к исходным файлам с новым пакетом
-    into("${projectDir}/src/androidTest/java/${newPackageName}".toString())
-
+    into(newAndroidTestJavaPackagePath)
     // Переименовываем файлы, меняя пакет
     eachFile { details ->
         def filePath = details.path
-        def oldPackagePath = "${projectDir}/src/androidTest/java/${oldPackageName}".toString()
-        println("Renaming file: ${filePath} from package: ${oldPackagePath}")
-        details.path = filePath.replace(oldPackageName, newPackageName)
+        println("Renaming file: ${filePath} from package: ${oldAndroidTestJavaPackagePath}")
+        details.path = filePath.replace(oldPackagePath, newPackagePath)
 
         // Меняем пакет внутри Java файлов
         if (details.file.isFile() && (details.file.name.endsWith(".java") || details.file.name.endsWith(".kt"))) {
-            details.file.text = details.file.text.replace("${oldPackageName.replace('/', '.')}", "${newPackageName.replace('/', '.')}")
+            details.file.text = details.file.text.replace(oldPackageName, newPackageName)
         }
     }
 
-    def oldPackageName1 = "androidx.media3"
-    def newPackageName1 = "io.bidmachine.media3"
     // Обновляем пакет в манифесте
     doLast {
         def manifestFile = file("${projectDir}/src/androidTest/AndroidManifest.xml")
         String manifestContent = manifestFile.text
-        manifestContent = manifestContent.replace(oldPackageName1, newPackageName1)
+        manifestContent = manifestContent.replace(oldPackageName, newPackageName)
         manifestFile.text = manifestContent
-        println("Updated package in AndroidManifest.xml: ${oldPackageName} to ${newPackageName}")
+        println("Updated package in AndroidManifest.xml: ${oldPackagePath} to ${newPackagePath}")
     }
 
     // Обновляем пакет в других файлах проекта (при необходимости)
@@ -179,8 +175,7 @@ task renamePackageAndroidTest(type: Copy) {
 
     // Удаляем старые файлы из старого пакета
     doLast {
-        def oldPackagePath = "${projectDir}/src/androidTest/java/${oldPackageName}".toString()
-        fileTree(dir: oldPackagePath).visit { FileVisitDetails details ->
+        fileTree(dir: oldAndroidTestJavaPackagePath).visit { FileVisitDetails details ->
             details.file.delete()
         }
     }
