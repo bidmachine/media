@@ -1,0 +1,200 @@
+def oldPackagePath = "androidx/media3"
+def newPackagePath = "io/bidmachine/media3"
+def oldPackageName = "androidx.media3"
+def newPackageName = "io.bidmachine.media3"
+def resPrefix = "bm_"
+
+// Создаем новую задачу для переименования пакета исходных файлов
+task renamePackageJava(type: Copy) {
+    def oldJavaPackagePath = "${projectDir}/src/main/java/${oldPackagePath}".toString()
+    def newJavaPackagePath = "${projectDir}/src/main/java/${newPackagePath}".toString()
+
+    // Устанавливаем путь к исходным файлам с текущим пакетом
+    from(oldJavaPackagePath)
+    // Устанавливаем путь к исходным файлам с новым пакетом
+    into(newJavaPackagePath)
+    // Переименовываем файлы, меняя пакет
+    eachFile { details ->
+        def filePath = details.path
+        println("Renaming file: ${filePath} from package: ${oldJavaPackagePath}")
+        details.path = filePath.replace(oldPackagePath, newPackagePath)
+
+        // Меняем пакет внутри Java файлов
+        if (details.file.isFile() && (details.file.name.endsWith(".java") || details.file.name.endsWith(".kt"))) {
+            details.file.text = details.file.text.replace(oldPackageName, newPackageName)
+        }
+    }
+
+    // Обновляем пакет в манифесте
+    doLast {
+        def manifestFile = file("${projectDir}/src/main/AndroidManifest.xml")
+        String manifestContent = manifestFile.text
+        manifestContent = manifestContent.replace(oldPackageName, newPackageName)
+        manifestFile.text = manifestContent
+        println("Updated package in AndroidManifest.xml: ${oldPackagePath} to ${newPackagePath}")
+    }
+
+    // Обновляем пакет в XML файлах
+    doLast {
+        fileTree(dir: "${projectDir}/src/main/res/layout", include: '**/*.xml').each { xmlFile ->
+            if (!xmlFile.name.startsWith(resPrefix)) {
+                if (xmlFile.text.contains(oldPackageName)) {
+                    def xmlContent = xmlFile.text
+                    xmlContent = xmlContent.replace(oldPackageName, newPackageName)
+                    xmlFile.text = xmlContent
+                    println("Updated package in ${xmlFile}")
+                }
+
+                def resFileName = xmlFile.name.split("\\.")[0]
+                def newResFileName = "$resPrefix$resFileName"
+                xmlFile.renameTo(new File(xmlFile.parentFile, "${newResFileName}.xml"))
+
+                fileTree(dir: newJavaPackagePath, includes: ['**/*.java', '**/*.kt']).each { classFile ->
+                    classFile.text = classFile.text.replace("R.layout.$resFileName", "R.layout.$newResFileName")
+                }
+            }
+        }
+    }
+
+    // Удаляем старые файлы из старого пакета
+    doLast {
+        fileTree(dir: oldJavaPackagePath).visit { FileVisitDetails details ->
+            details.file.delete()
+        }
+    }
+}
+
+// Создаем новую задачу для переименования пакета исходных файлов
+task renamePackageAidl(type: Copy) {
+    def oldAidlPackagePath = "${projectDir}/src/main/aidl/${oldPackagePath}".toString()
+    def newAidlPackagePath = "${projectDir}/src/main/aidl/${newPackagePath}".toString()
+
+    // Устанавливаем путь к исходным файлам с текущим пакетом
+    from(oldAidlPackagePath)
+    // Устанавливаем путь к исходным файлам с новым пакетом
+    into(newAidlPackagePath)
+    // Обработка файлов aidl
+    eachFile { details ->
+        def filePath = details.path
+        println("Renaming file: ${filePath}\n from package: ${oldAidlPackagePath}\n to package ${newAidlPackagePath}")
+        details.path = filePath.replace(oldPackagePath, newPackagePath)
+
+        // Меняем пакет внутри Aidl файлов
+        if (details.file.isFile() && details.file.name.endsWith(".aidl")) {
+            details.file.text = details.file.text.replace(oldPackageName, newPackageName)
+        }
+    }
+
+    // Обновляем пакет в манифесте
+    doLast {
+        def manifestFile = file("${projectDir}/src/main/AndroidManifest.xml")
+        String manifestContent = manifestFile.text
+        manifestContent = manifestContent.replace(oldPackageName, newPackageName)
+        manifestFile.text = manifestContent
+        println("Updated package in AndroidManifest.xml: ${oldPackagePath} to ${newPackagePath}")
+    }
+
+    // Обновляем пакет в других файлах проекта (при необходимости)
+    // Например, strings.xml, файлы ресурсов и т.д.
+    // Можете добавить сюда дополнительные задачи для изменения пакета в других файлах
+
+    // Удаляем старые файлы из старого пакета
+    doLast {
+        fileTree(dir: oldAidlPackagePath).visit { FileVisitDetails details ->
+            details.file.delete()
+        }
+    }
+}
+
+// Создаем новую задачу для переименования пакета исходных файлов
+task renamePackageTest(type: Copy) {
+    def oldTestJavaPackagePath = "${projectDir}/src/test/java/${oldPackagePath}".toString()
+    def newTestJavaPackagePath = "${projectDir}/src/test/java/${newPackagePath}".toString()
+
+    // Устанавливаем путь к исходным файлам с текущим пакетом
+    from(oldTestJavaPackagePath)
+    // Устанавливаем путь к исходным файлам с новым пакетом
+    into(newTestJavaPackagePath)
+    // Переименовываем файлы, меняя пакет
+    eachFile { details ->
+        def filePath = details.path
+        println("Renaming file: ${filePath} from package: ${oldTestJavaPackagePath}")
+        details.path = filePath.replace(oldPackagePath, newPackagePath)
+
+        // Меняем пакет внутри Java файлов
+        if (details.file.isFile() && (details.file.name.endsWith(".java") || details.file.name.endsWith(".kt"))) {
+            details.file.text = details.file.text.replace(oldPackageName, newPackageName)
+        }
+    }
+
+    // Обновляем пакет в других файлах проекта (при необходимости)
+    // Например, strings.xml, файлы ресурсов и т.д.
+    // Можете добавить сюда дополнительные задачи для изменения пакета в других файлах
+
+    // Удаляем старые файлы из старого пакета
+    doLast {
+        fileTree(dir: oldTestJavaPackagePath).visit { FileVisitDetails details ->
+            details.file.delete()
+        }
+    }
+}
+
+// Создаем новую задачу для переименования пакета исходных файлов
+task renamePackageAndroidTest(type: Copy) {
+    def oldAndroidTestJavaPackagePath = "${projectDir}/src/androidTest/java/${oldPackagePath}".toString()
+    def newAndroidTestJavaPackagePath = "${projectDir}/src/androidTest/java/${newPackagePath}".toString()
+
+    // Устанавливаем путь к исходным файлам с текущим пакетом
+    from(oldAndroidTestJavaPackagePath)
+    // Устанавливаем путь к исходным файлам с новым пакетом
+    into(newAndroidTestJavaPackagePath)
+    // Переименовываем файлы, меняя пакет
+    eachFile { details ->
+        def filePath = details.path
+        println("Renaming file: ${filePath} from package: ${oldAndroidTestJavaPackagePath}")
+        details.path = filePath.replace(oldPackagePath, newPackagePath)
+
+        // Меняем пакет внутри Java файлов
+        if (details.file.isFile() && (details.file.name.endsWith(".java") || details.file.name.endsWith(".kt"))) {
+            details.file.text = details.file.text.replace(oldPackageName, newPackageName)
+        }
+    }
+
+    // Обновляем пакет в манифесте
+    doLast {
+        def manifestFile = file("${projectDir}/src/androidTest/AndroidManifest.xml")
+        String manifestContent = manifestFile.text
+        manifestContent = manifestContent.replace(oldPackageName, newPackageName)
+        manifestFile.text = manifestContent
+        println("Updated package in AndroidManifest.xml: ${oldPackagePath} to ${newPackagePath}")
+    }
+
+    // Обновляем пакет в других файлах проекта (при необходимости)
+    // Например, strings.xml, файлы ресурсов и т.д.
+    // Можете добавить сюда дополнительные задачи для изменения пакета в других файлах
+
+    // Удаляем старые файлы из старого пакета
+    doLast {
+        fileTree(dir: oldAndroidTestJavaPackagePath).visit { FileVisitDetails details ->
+            details.file.delete()
+        }
+    }
+}
+
+// Создаем новую таску для запуска всех тасков переименования пакета
+task renameAllPackages {
+    dependsOn renamePackageJava, renamePackageAidl, renamePackageTest, renamePackageAndroidTest
+}
+
+afterEvaluate {
+    if (plugins.hasPlugin('com.android.library')) {
+        android.libraryVariants.all { variant ->
+            variant.javaCompile.dependsOn(renameAllPackages)
+        }
+    }
+    if (plugins.hasPlugin('com.android.application')) {
+        android.applicationVariants.all { variant ->
+            variant.javaCompile.dependsOn(renameAllPackages)
+        }
+    }
+}

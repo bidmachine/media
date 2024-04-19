@@ -33,7 +33,8 @@ allprojects {
         }
         buildDir = "${externalBuildDir}/${project.name}"
     }
-    group = 'androidx.media3'
+    group = 'io.bidmachine.media3'
+    apply from: rootProject.file('renamePackage.gradle')
 }
 
 apply from: 'javadoc_combined.gradle'
