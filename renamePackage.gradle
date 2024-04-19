@@ -37,19 +37,19 @@ task renamePackageJava(type: Copy) {
     // Обновляем пакет в XML файлах
     doLast {
         fileTree(dir: "${projectDir}/src/main/res/layout", include: '**/*.xml').each { xmlFile ->
-            if (xmlFile.text.contains(oldPackageName)) {
-                def xmlContent = xmlFile.text
-                xmlContent = xmlContent.replace(oldPackageName, newPackageName)
-                xmlFile.text = xmlContent
-                println("Updated package in ${xmlFile}")
+            if (!xmlFile.name.startsWith(resPrefix)) {
+                if (xmlFile.text.contains(oldPackageName)) {
+                    def xmlContent = xmlFile.text
+                    xmlContent = xmlContent.replace(oldPackageName, newPackageName)
+                    xmlFile.text = xmlContent
+                    println("Updated package in ${xmlFile}")
+                }
 
                 def resFileName = xmlFile.name.split("\\.")[0]
                 def newResFileName = "$resPrefix$resFileName"
                 xmlFile.renameTo(new File(xmlFile.parentFile, "${newResFileName}.xml"))
 
                 fileTree(dir: newJavaPackagePath, includes: ['**/*.java', '**/*.kt']).each { classFile ->
-                    println("Test Details ${classFile.path}")
-
                     classFile.text = classFile.text.replace("R.layout.$resFileName", "R.layout.$newResFileName")
                 }
             }
