@@ -1,0 +1,148 @@
+def oldPackagePath = "androidx/media3"
+def newPackagePath = "io/bidmachine/media3"
+def oldPackageName = "androidx.media3"
+def newPackageName = "io.bidmachine.media3"
+def resPrefix = "bm_"
+def taskGroup = "bidmachine"
+
+project.group = 'io.bidmachine.media3'
+
+// Global task to rename all necessary data, should be used to run
+tasks.register('renameAllPackages') {
+    group = taskGroup
+    description = "Rename all packages"
+
+    dependsOn renamePackageJava, renamePackageAidl, renamePackageTest, renamePackageAndroidTest
+}
+
+// Rename sources packages
+tasks.register('renamePackageJava') {
+    group = taskGroup
+
+    def oldJavaPackagePath = "${projectDir}/src/main/java/${oldPackagePath}".toString()
+    def newJavaPackagePath = "${projectDir}/src/main/java/${newPackagePath}".toString()
+    def buildGradleFile = file("${projectDir}/build.gradle")
+    def manifestFile = file("${projectDir}/src/main/AndroidManifest.xml")
+    def xmlResourcesDir = file("${projectDir}/src/main/res/layout")
+
+    doLast {
+        processSourceFiles(["java", "kt"] as Set, oldJavaPackagePath, newJavaPackagePath, oldPackagePath, newPackagePath, oldPackageName, newPackageName)
+        processBuildGradle(buildGradleFile, oldPackageName, newPackageName)
+        processManifest(manifestFile, oldPackagePath, newPackagePath, oldPackageName, newPackageName)
+        processXmlFiles(xmlResourcesDir, newJavaPackagePath, resPrefix, oldPackageName, newPackageName)
+        cleanupFiles(oldJavaPackagePath)
+    }
+}
+
+// Rename sources packages AIDLs
+tasks.register('renamePackageAidl') {
+    group = taskGroup
+
+    def oldAidlPackagePath = "${projectDir}/src/main/aidl/${oldPackagePath}".toString()
+    def newAidlPackagePath = "${projectDir}/src/main/aidl/${newPackagePath}".toString()
+
+    doLast {
+        processSourceFiles(["aidl"] as Set, oldAidlPackagePath, newAidlPackagePath, oldPackagePath, newPackagePath, oldPackageName, newPackageName)
+        cleanupFiles(oldAidlPackagePath)
+    }
+}
+
+// Rename sources test packages
+tasks.register('renamePackageTest') {
+    group = taskGroup
+
+    def oldTestJavaPackagePath = "${projectDir}/src/test/java/${oldPackagePath}".toString()
+    def newTestJavaPackagePath = "${projectDir}/src/test/java/${newPackagePath}".toString()
+
+    doLast {
+        processSourceFiles(["java", "kt"] as Set, oldTestJavaPackagePath, newTestJavaPackagePath, oldPackagePath, newPackagePath, oldPackageName, newPackageName)
+        cleanupFiles(oldTestJavaPackagePath)
+    }
+}
+
+// Rename sources android test packages
+tasks.register('renamePackageAndroidTest') {
+    group = taskGroup
+
+    def oldAndroidTestJavaPackagePath = "${projectDir}/src/androidTest/java/${oldPackagePath}".toString()
+    def newAndroidTestJavaPackagePath = "${projectDir}/src/androidTest/java/${newPackagePath}".toString()
+    def manifestFile = file("${projectDir}/src/androidTest/AndroidManifest.xml")
+    def xmlResourcesDir = file("${projectDir}/src/androidTest/res/layout")
+
+    doLast {
+        processSourceFiles(["java", "kt"] as Set, oldAndroidTestJavaPackagePath, newAndroidTestJavaPackagePath, oldPackagePath, newPackagePath, oldPackageName, newPackageName)
+        processManifest(manifestFile, oldPackagePath, newPackagePath, oldPackageName, newPackageName)
+        processXmlFiles(xmlResourcesDir, newAndroidTestJavaPackagePath, resPrefix, oldPackageName, newPackageName)
+        cleanupFiles(oldAndroidTestJavaPackagePath)
+    }
+}
+
+def processSourceFiles(Set<String> extensions, String oldSourcePackagePath, String newSourcePackagePath, String oldPackagePath, String newPackagePath, String oldPackageName, String newPackageName) {
+    copy {
+        from(oldSourcePackagePath)
+        into(newSourcePackagePath)
+        // Move file, change package
+        eachFile { details ->
+            def filePath = details.path
+            println("Renaming file: ${filePath} from package: ${oldSourcePackagePath}")
+            details.path = filePath.replace(oldPackagePath, newPackagePath)
+
+            // Change package inside file
+            String sourceFileExtension = getFileExtension(details.file.name)
+            if (details.file.isFile() && extensions.contains(sourceFileExtension)) {
+                details.file.text = details.file.text.replace(oldPackageName, newPackageName)
+            }
+        }
+    }
+}
+
+def processManifest(File manifestFile, String oldPackagePath, String newPackagePath, String oldPackageName, String newPackageName) {
+    if (!manifestFile.exists()) {
+        return
+    }
+    String manifestContent = manifestFile.text
+    manifestContent = manifestContent.replace(oldPackageName, newPackageName)
+    manifestFile.text = manifestContent
+    println("Updated package in $manifestFile: ${oldPackagePath} to ${newPackagePath}")
+}
+
+def processBuildGradle(File buildGradleFile, String oldPackageName, String newPackageName) {
+    if (!buildGradleFile.exists()) {
+        return
+    }
+    String buildGradleContent = buildGradleFile.text
+    buildGradleContent = buildGradleContent.replace(oldPackageName, newPackageName)
+    buildGradleFile.text = buildGradleContent
+    println("Updated package in $buildGradleFile: ${oldPackageName} to ${newPackageName}")
+}
+
+def processXmlFiles(File resourcesDir, String newJavaPackagePath, String resPrefix, String oldPackageName, String newPackageName) {
+    fileTree(dir: resourcesDir, include: '**/*.xml').each { xmlFile ->
+        if (!xmlFile.name.startsWith(resPrefix)) {
+            if (xmlFile.text.contains(oldPackageName)) {
+                def xmlContent = xmlFile.text
+                xmlContent = xmlContent.replace(oldPackageName, newPackageName)
+                xmlFile.text = xmlContent
+                println("Updated package in $xmlFile")
+            }
+
+            def resFileName = xmlFile.name.split("\\.")[0]
+            def newResFileName = "$resPrefix$resFileName"
+            xmlFile.renameTo(new File(xmlFile.parentFile, "${newResFileName}.xml"))
+
+            fileTree(dir: newJavaPackagePath, includes: ['**/*.java', '**/*.kt']).each { classFile ->
+                classFile.text = classFile.text.replace("R.layout.$resFileName", "R.layout.$newResFileName")
+            }
+        }
+    }
+}
+
+def cleanupFiles(String oldJavaPackagePath) {
+    fileTree(dir: oldJavaPackagePath).visit { FileVisitDetails details ->
+        details.file.delete()
+    }
+}
+
+static def getFileExtension(String fileName) {
+    return fileName.lastIndexOf('.') != -1 ? fileName.substring(fileName.lastIndexOf('.') + 1) : ''
+}

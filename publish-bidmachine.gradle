@@ -1,0 +1,34 @@
+apply plugin: 'maven-publish'
+apply from: "$gradle.ext.androidxMediaSettingsDir/missing_aar_type_workaround.gradle"
+
+afterEvaluate {
+    publishing {
+        repositories {
+            def repo = findProperty("repo").toString()
+            def uname = findProperty("uname").toString()
+            def upassword = findProperty("upassword").toString()
+            maven {
+                name = "BidMachine"
+                if (repo != null && !repo.isEmpty()) {
+                    url = uri("https://artifactory.bidmachine.io/artifactory/$repo")
+                    credentials {
+                        username = uname
+                        password = upassword
+                    }
+                }
+            }
+        }
+        publications {
+            "${project.name}"(MavenPublication) {
+                version = findProperty('releaseVersion') ?: ''
+                artifactId = findProperty('releaseArtifactId') ?: ''
+                from components.release
+            }
+        }
+    }
+}
+
+task androidSourcesJar(type: Jar) {
+    archiveClassifier.set('sources')
+    from android.sourceSets.main.java.srcDirs
+}

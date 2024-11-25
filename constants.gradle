@@ -65,3 +65,4 @@ project.ext {
         modulePrefix += gradle.ext.androidxMediaModulePrefix
     }
 }
+apply from: rootProject.file('constants-bidmachine.gradle')
