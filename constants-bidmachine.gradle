@@ -3,7 +3,7 @@ project.ext {
     releaseVersionCode = 1_004_001_3_01
     kotlinxCoroutinesVersion = '1.6.4'
     robolectricVersion = '4.8.1'
-    kotlinAnnotationsVersion = '1.7.22'
+    kotlinAnnotationsVersion = '1.7.21'
     androidxAnnotationExperimentalVersion = '1.2.0'
     androidxCollectionVersion = '1.1.0'
     androidxMediaVersion = '1.6.0'
