@@ -8,5 +8,5 @@ project.ext {
     androidxCollectionVersion = '1.1.0'
     androidxMediaVersion = '1.6.0'
     truthVersion = '1.4.0'
-    okhttpVersion = '4.12.0'
+    okhttpVersion = '4.11.0'
 }
