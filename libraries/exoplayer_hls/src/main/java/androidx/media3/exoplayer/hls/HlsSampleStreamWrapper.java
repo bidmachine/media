@@ -83,6 +83,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.checkerframework.checker.nullness.qual.EnsuresNonNull;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
@@ -428,7 +429,7 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
       }
     } else {
       if (!mediaChunks.isEmpty()
-          && !Util.areEqual(primaryTrackSelection, oldPrimaryTrackSelection)) {
+          && !Objects.equals(primaryTrackSelection, oldPrimaryTrackSelection)) {
         // The primary track selection has changed and we have buffered media. The buffered media
         // may need to be discarded.
         boolean primarySampleQueueDirty = false;
@@ -808,18 +809,8 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
       initMediaChunkLoad((HlsMediaChunk) loadable);
     }
     loadingChunk = loadable;
-    long elapsedRealtimeMs =
-        loader.startLoading(
-            loadable, this, loadErrorHandlingPolicy.getMinimumLoadableRetryCount(loadable.type));
-    mediaSourceEventDispatcher.loadStarted(
-        new LoadEventInfo(loadable.loadTaskId, loadable.dataSpec, elapsedRealtimeMs),
-        loadable.type,
-        trackType,
-        loadable.trackFormat,
-        loadable.trackSelectionReason,
-        loadable.trackSelectionData,
-        loadable.startTimeUs,
-        loadable.endTimeUs);
+    loader.startLoading(
+        loadable, this, loadErrorHandlingPolicy.getMinimumLoadableRetryCount(loadable.type));
     return true;
   }
 
@@ -859,6 +850,32 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
   }
 
   // Loader.Callback implementation.
+
+  @Override
+  public void onLoadStarted(
+      Chunk loadable, long elapsedRealtimeMs, long loadDurationMs, int retryCount) {
+    LoadEventInfo loadEventInfo =
+        retryCount == 0
+            ? new LoadEventInfo(loadable.loadTaskId, loadable.dataSpec, elapsedRealtimeMs)
+            : new LoadEventInfo(
+                loadable.loadTaskId,
+                loadable.dataSpec,
+                loadable.getUri(),
+                loadable.getResponseHeaders(),
+                elapsedRealtimeMs,
+                loadDurationMs,
+                loadable.bytesLoaded());
+    mediaSourceEventDispatcher.loadStarted(
+        loadEventInfo,
+        loadable.type,
+        trackType,
+        loadable.trackFormat,
+        loadable.trackSelectionReason,
+        loadable.trackSelectionData,
+        loadable.startTimeUs,
+        loadable.endTimeUs,
+        retryCount);
+  }
 
   @Override
   public void onLoadCompleted(Chunk loadable, long elapsedRealtimeMs, long loadDurationMs) {
@@ -1236,7 +1253,7 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
    *     #overridingDrmInitData}.
    */
   public void setDrmInitData(@Nullable DrmInitData drmInitData) {
-    if (!Util.areEqual(this.drmInitData, drmInitData)) {
+    if (!Objects.equals(this.drmInitData, drmInitData)) {
       this.drmInitData = drmInitData;
       for (int i = 0; i < sampleQueues.length; i++) {
         if (sampleQueueIsAudioVideoFlags[i]) {
@@ -1636,7 +1653,7 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
     int manifestFormatTrackType = MimeTypes.getTrackType(manifestFormatMimeType);
     if (manifestFormatTrackType != C.TRACK_TYPE_TEXT) {
       return manifestFormatTrackType == MimeTypes.getTrackType(sampleFormatMimeType);
-    } else if (!Util.areEqual(manifestFormatMimeType, sampleFormatMimeType)) {
+    } else if (!Objects.equals(manifestFormatMimeType, sampleFormatMimeType)) {
       return false;
     }
     if (MimeTypes.APPLICATION_CEA608.equals(manifestFormatMimeType)
@@ -1866,7 +1883,7 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
       Assertions.checkNotNull(format);
       ParsableByteArray sample = getSampleAndTrimBuffer(size, offset);
       ParsableByteArray sampleForDelegate;
-      if (Util.areEqual(format.sampleMimeType, delegateFormat.sampleMimeType)) {
+      if (Objects.equals(format.sampleMimeType, delegateFormat.sampleMimeType)) {
         // Incoming format matches delegate track's format, so pass straight through.
         sampleForDelegate = sample;
       } else if (MimeTypes.APPLICATION_EMSG.equals(format.sampleMimeType)) {
@@ -1896,7 +1913,7 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
     private boolean emsgContainsExpectedWrappedFormat(EventMessage emsg) {
       @Nullable Format wrappedMetadataFormat = emsg.getWrappedMetadataFormat();
       return wrappedMetadataFormat != null
-          && Util.areEqual(delegateFormat.sampleMimeType, wrappedMetadataFormat.sampleMimeType);
+          && Objects.equals(delegateFormat.sampleMimeType, wrappedMetadataFormat.sampleMimeType);
     }
 
     private void ensureBufferCapacity(int requiredLength) {

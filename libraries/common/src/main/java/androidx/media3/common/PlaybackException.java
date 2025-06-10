@@ -36,6 +36,7 @@ import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.Objects;
 
 /** Thrown when a non locally recoverable playback failure occurs. */
 public class PlaybackException extends Exception {
@@ -91,6 +92,7 @@ public class PlaybackException extends Exception {
         ERROR_CODE_DECODING_FAILED,
         ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES,
         ERROR_CODE_DECODING_FORMAT_UNSUPPORTED,
+        ERROR_CODE_DECODING_RESOURCES_RECLAIMED,
         ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
         ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
         ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED,
@@ -272,9 +274,8 @@ public class PlaybackException extends Exception {
   /** Caused by trying to decode content whose format is not supported. */
   public static final int ERROR_CODE_DECODING_FORMAT_UNSUPPORTED = 4005;
 
-  // TODO: b/322943860 - Stabilize error code and add to IntDef
   /** Caused by higher priority task reclaiming resources needed for decoding. */
-  @UnstableApi public static final int ERROR_CODE_DECODING_RESOURCES_RECLAIMED = 4006;
+  public static final int ERROR_CODE_DECODING_RESOURCES_RECLAIMED = 4006;
 
   // AudioTrack errors (5xxx).
 
@@ -553,17 +554,17 @@ public class PlaybackException extends Exception {
     @Nullable Throwable thisCause = getCause();
     @Nullable Throwable thatCause = other.getCause();
     if (thisCause != null && thatCause != null) {
-      if (!Util.areEqual(thisCause.getMessage(), thatCause.getMessage())) {
+      if (!Objects.equals(thisCause.getMessage(), thatCause.getMessage())) {
         return false;
       }
-      if (!Util.areEqual(thisCause.getClass(), thatCause.getClass())) {
+      if (!Objects.equals(thisCause.getClass(), thatCause.getClass())) {
         return false;
       }
     } else if (thisCause != null || thatCause != null) {
       return false;
     }
     return errorCode == other.errorCode
-        && Util.areEqual(getMessage(), other.getMessage())
+        && Objects.equals(getMessage(), other.getMessage())
         && timestampMs == other.timestampMs;
   }
 

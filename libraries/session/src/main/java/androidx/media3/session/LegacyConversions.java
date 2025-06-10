@@ -43,6 +43,7 @@ import static androidx.media3.common.util.Assertions.checkNotNull;
 import static androidx.media3.common.util.Util.constrainValue;
 import static androidx.media3.session.MediaConstants.EXTRA_KEY_ROOT_CHILDREN_BROWSABLE_ONLY;
 import static androidx.media3.session.legacy.MediaConstants.BROWSER_ROOT_HINTS_KEY_ROOT_CHILDREN_SUPPORTED_FLAGS;
+import static androidx.media3.session.legacy.MediaConstants.DESCRIPTION_EXTRAS_KEY_CUSTOM_BROWSER_ACTION_ID_LIST;
 import static androidx.media3.session.legacy.MediaMetadataCompat.PREFERRED_DESCRIPTION_ORDER;
 import static androidx.media3.session.legacy.MediaSessionCompat.FLAG_HANDLES_QUEUE_COMMANDS;
 import static java.lang.Math.max;
@@ -76,7 +77,6 @@ import androidx.media3.common.Timeline;
 import androidx.media3.common.Timeline.Period;
 import androidx.media3.common.Timeline.Window;
 import androidx.media3.common.util.Log;
-import androidx.media3.common.util.Util;
 import androidx.media3.session.MediaLibraryService.LibraryParams;
 import androidx.media3.session.legacy.AudioAttributesCompat;
 import androidx.media3.session.legacy.MediaBrowserCompat;
@@ -147,10 +147,6 @@ import java.util.concurrent.TimeoutException;
   public static class ConversionException extends Exception {
     private ConversionException(String message) {
       super(message);
-    }
-
-    private ConversionException(String message, Throwable cause) {
-      super(message, cause);
     }
   }
 
@@ -540,6 +536,15 @@ import java.util.concurrent.TimeoutException;
     }
 
     if (extras != null
+        && extras.containsKey(DESCRIPTION_EXTRAS_KEY_CUSTOM_BROWSER_ACTION_ID_LIST)) {
+      builder.setSupportedCommands(
+          ImmutableList.copyOf(
+              checkNotNull(
+                  extras.getStringArrayList(
+                      DESCRIPTION_EXTRAS_KEY_CUSTOM_BROWSER_ACTION_ID_LIST))));
+    }
+
+    if (extras != null
         && extras.containsKey(MediaConstants.EXTRAS_KEY_MEDIA_DESCRIPTION_COMPAT_TITLE)) {
       builder.setTitle(
           extras.getCharSequence(MediaConstants.EXTRAS_KEY_MEDIA_DESCRIPTION_COMPAT_TITLE));
@@ -611,7 +616,8 @@ import java.util.concurrent.TimeoutException;
         getFirstString(
             metadataCompat,
             MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI,
-            MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI);
+            MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI,
+            MediaMetadataCompat.METADATA_KEY_ART_URI);
     if (artworkUriString != null) {
       builder.setArtworkUri(Uri.parse(artworkUriString));
     }
@@ -621,7 +627,8 @@ import java.util.concurrent.TimeoutException;
         getFirstBitmap(
             metadataCompat,
             MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON,
-            MediaMetadataCompat.METADATA_KEY_ALBUM_ART);
+            MediaMetadataCompat.METADATA_KEY_ALBUM_ART,
+            MediaMetadataCompat.METADATA_KEY_ART);
     if (artworkBitmap != null) {
       try {
         byte[] artworkData = convertToByteArray(artworkBitmap);
@@ -742,6 +749,7 @@ import java.util.concurrent.TimeoutException;
           MediaMetadataCompat.METADATA_KEY_DISPLAY_ICON_URI, metadata.artworkUri.toString());
       builder.putString(
           MediaMetadataCompat.METADATA_KEY_ALBUM_ART_URI, metadata.artworkUri.toString());
+      builder.putString(MediaMetadataCompat.METADATA_KEY_ART_URI, metadata.artworkUri.toString());
     }
 
     if (artworkBitmap != null) {
@@ -826,6 +834,14 @@ import java.util.concurrent.TimeoutException;
             MediaConstants.EXTRAS_KEY_MEDIA_TYPE_COMPAT, checkNotNull(metadata.mediaType));
       }
     }
+    if (!metadata.supportedCommands.isEmpty()) {
+      if (extras == null) {
+        extras = new Bundle();
+      }
+      extras.putStringArrayList(
+          DESCRIPTION_EXTRAS_KEY_CUSTOM_BROWSER_ACTION_ID_LIST,
+          new ArrayList<>(metadata.supportedCommands));
+    }
     CharSequence title;
     CharSequence subtitle;
     CharSequence description;
@@ -882,6 +898,8 @@ import java.util.concurrent.TimeoutException;
         return metadata.writer;
       case MediaMetadataCompat.METADATA_KEY_COMPOSER:
         return metadata.composer;
+      case MediaMetadataCompat.METADATA_KEY_DISPLAY_SUBTITLE:
+        return metadata.subtitle;
       default:
         return null;
     }
@@ -1010,12 +1028,11 @@ import java.util.concurrent.TimeoutException;
 
   /** Converts {@link Player}' states to state of {@link PlaybackStateCompat}. */
   @PlaybackStateCompat.State
-  public static int convertToPlaybackStateCompatState(Player player, boolean playIfSuppressed) {
+  public static int convertToPlaybackStateCompatState(Player player, boolean shouldShowPlayButton) {
     if (player.getPlayerError() != null) {
       return PlaybackStateCompat.STATE_ERROR;
     }
     @Player.State int playbackState = player.getPlaybackState();
-    boolean shouldShowPlayButton = Util.shouldShowPlayButton(player, playIfSuppressed);
     switch (playbackState) {
       case Player.STATE_IDLE:
         return PlaybackStateCompat.STATE_NONE;
@@ -1079,12 +1096,14 @@ import java.util.concurrent.TimeoutException;
     if (playbackStateCompat == null) {
       return Player.STATE_IDLE;
     }
+    boolean isEnded = convertToIsEnded(playbackStateCompat, currentMediaMetadata, timeDiffMs);
     switch (playbackStateCompat.getState()) {
       case PlaybackStateCompat.STATE_CONNECTING:
       case PlaybackStateCompat.STATE_ERROR:
       case PlaybackStateCompat.STATE_NONE:
-      case PlaybackStateCompat.STATE_STOPPED:
         return Player.STATE_IDLE;
+      case PlaybackStateCompat.STATE_STOPPED:
+        return isEnded ? Player.STATE_ENDED : Player.STATE_IDLE;
       case PlaybackStateCompat.STATE_BUFFERING:
       case PlaybackStateCompat.STATE_FAST_FORWARDING:
       case PlaybackStateCompat.STATE_REWINDING:
@@ -1095,13 +1114,7 @@ import java.util.concurrent.TimeoutException;
       case PlaybackStateCompat.STATE_PLAYING:
         return Player.STATE_READY;
       case PlaybackStateCompat.STATE_PAUSED:
-        long duration = convertToDurationMs(currentMediaMetadata);
-        if (duration == C.TIME_UNSET) {
-          return Player.STATE_READY;
-        }
-        long currentPosition =
-            convertToCurrentPositionMs(playbackStateCompat, currentMediaMetadata, timeDiffMs);
-        return (currentPosition < duration) ? Player.STATE_READY : Player.STATE_ENDED;
+        return isEnded ? Player.STATE_ENDED : Player.STATE_READY;
       default:
         throw new ConversionException(
             "Invalid state of PlaybackStateCompat: " + playbackStateCompat.getState());
@@ -1357,8 +1370,9 @@ import java.util.concurrent.TimeoutException;
       boolean isSessionReady) {
     Player.Commands.Builder playerCommandsBuilder = new Player.Commands.Builder();
     long actions = playbackStateCompat == null ? 0 : playbackStateCompat.getActions();
-    if ((hasAction(actions, PlaybackStateCompat.ACTION_PLAY)
-            && hasAction(actions, PlaybackStateCompat.ACTION_PAUSE))
+    boolean playWhenReady = convertToPlayWhenReady(playbackStateCompat);
+    if ((hasAction(actions, PlaybackStateCompat.ACTION_PLAY) && !playWhenReady)
+        || (hasAction(actions, PlaybackStateCompat.ACTION_PAUSE) && playWhenReady)
         || hasAction(actions, PlaybackStateCompat.ACTION_PLAY_PAUSE)) {
       playerCommandsBuilder.add(COMMAND_PLAY_PAUSE);
     }
@@ -1477,14 +1491,17 @@ import java.util.concurrent.TimeoutException;
   }
 
   /**
-   * Converts {@link CustomAction} in the {@link PlaybackStateCompat} to the custom layout which is
-   * the list of the {@link CommandButton}.
+   * Converts {@link CustomAction} in the {@link PlaybackStateCompat} to media button preferences.
    *
-   * @param state playback state
-   * @return custom layout. Always non-null.
+   * @param state The {@link PlaybackStateCompat}.
+   * @param availablePlayerCommands The available {@link Player.Commands}.
+   * @param sessionExtras The {@linkplain MediaControllerCompat#getExtras session-level extras}.
+   * @return The media button preferences.
    */
-  public static ImmutableList<CommandButton> convertToCustomLayout(
-      @Nullable PlaybackStateCompat state) {
+  public static ImmutableList<CommandButton> convertToMediaButtonPreferences(
+      @Nullable PlaybackStateCompat state,
+      Player.Commands availablePlayerCommands,
+      Bundle sessionExtras) {
     if (state == null) {
       return ImmutableList.of();
     }
@@ -1492,7 +1509,7 @@ import java.util.concurrent.TimeoutException;
     if (customActions == null) {
       return ImmutableList.of();
     }
-    ImmutableList.Builder<CommandButton> layout = new ImmutableList.Builder<>();
+    ImmutableList.Builder<CommandButton> customLayout = new ImmutableList.Builder<>();
     for (CustomAction customAction : customActions) {
       String action = customAction.getAction();
       @Nullable Bundle extras = customAction.getExtras();
@@ -1509,9 +1526,10 @@ import java.util.concurrent.TimeoutException;
               .setDisplayName(customAction.getName())
               .setEnabled(true)
               .build();
-      layout.add(button);
+      customLayout.add(button);
     }
-    return layout.build();
+    return CommandButton.getMediaButtonPreferencesFromCustomLayout(
+        customLayout.build(), availablePlayerCommands, sessionExtras);
   }
 
   /** Converts {@link AudioAttributesCompat} into {@link AudioAttributes}. */
@@ -1627,6 +1645,117 @@ import java.util.concurrent.TimeoutException;
       return false;
     }
     return playbackInfoCompat.getCurrentVolume() == 0;
+  }
+
+  /**
+   * Converts a {@linkplain Bundle custom browse action} to a {@link CommandButton}. Returns null if
+   * the bundle doesn't contain sufficient information to build a command button.
+   *
+   * <p>See <a href="https://developer.android.com/training/cars/media#custom_browse_actions">Custom
+   * Browse Actions for Automotive OS</a>.
+   *
+   * @param browseActionBundle The bundle containing the information of a browse action.
+   * @return The resulting {@link CommandButton} or null.
+   */
+  @Nullable
+  public static CommandButton convertCustomBrowseActionToCommandButton(Bundle browseActionBundle) {
+    String commandAction =
+        browseActionBundle.getString(
+            androidx.media3.session.legacy.MediaConstants.EXTRAS_KEY_CUSTOM_BROWSER_ACTION_ID);
+    if (commandAction == null) {
+      return null;
+    }
+    @Nullable
+    CommandButton.Builder commandButton =
+        new CommandButton.Builder()
+            .setSessionCommand(new SessionCommand(commandAction, Bundle.EMPTY));
+    String label =
+        browseActionBundle.getString(
+            androidx.media3.session.legacy.MediaConstants.EXTRAS_KEY_CUSTOM_BROWSER_ACTION_LABEL);
+    if (label != null) {
+      commandButton.setDisplayName(label);
+    }
+    String iconUri =
+        browseActionBundle.getString(
+            androidx.media3.session.legacy.MediaConstants
+                .EXTRAS_KEY_CUSTOM_BROWSER_ACTION_ICON_URI);
+    if (iconUri != null) {
+      try {
+        commandButton.setIconUri(Uri.parse(iconUri));
+      } catch (Throwable t) {
+        Log.e(TAG, "error parsing icon URI of legacy browser action " + commandAction, t);
+      }
+    }
+    Bundle actionExtras =
+        browseActionBundle.getBundle(
+            androidx.media3.session.legacy.MediaConstants.EXTRAS_KEY_CUSTOM_BROWSER_ACTION_EXTRAS);
+    if (actionExtras != null) {
+      commandButton.setExtras(actionExtras);
+    }
+    return commandButton.build();
+  }
+
+  /**
+   * Converts a {@link CommandButton} to a {@link Bundle} according to the browse action
+   * specification of Automotive OS.
+   *
+   * <p>See <a href="https://developer.android.com/training/cars/media#custom_browse_actions">Custom
+   * Browse Actions for Automotive OS</a>.
+   *
+   * @param commandButton The {@link CommandButton} to convert.
+   * @return The resulting {@link Bundle}.
+   */
+  public static Bundle convertToBundle(CommandButton commandButton) {
+    Bundle buttonBundle = new Bundle();
+    if (commandButton.sessionCommand != null) {
+      buttonBundle.putString(
+          androidx.media3.session.legacy.MediaConstants.EXTRAS_KEY_CUSTOM_BROWSER_ACTION_ID,
+          commandButton.sessionCommand.customAction);
+    }
+    buttonBundle.putString(
+        androidx.media3.session.legacy.MediaConstants.EXTRAS_KEY_CUSTOM_BROWSER_ACTION_LABEL,
+        commandButton.displayName.toString());
+    if (commandButton.iconUri != null) {
+      buttonBundle.putString(
+          androidx.media3.session.legacy.MediaConstants.EXTRAS_KEY_CUSTOM_BROWSER_ACTION_ICON_URI,
+          commandButton.iconUri.toString());
+    }
+    if (!commandButton.extras.isEmpty()) {
+      buttonBundle.putBundle(
+          androidx.media3.session.legacy.MediaConstants.EXTRAS_KEY_CUSTOM_BROWSER_ACTION_EXTRAS,
+          commandButton.extras);
+    }
+    return buttonBundle;
+  }
+
+  /**
+   * Gets the max number of commands for media items from the {@linkplain
+   * androidx.media3.session.legacy.MediaBrowserServiceCompat#onGetRoot(String, int, Bundle) root
+   * hints} of a legacy {@link MediaBrowserCompat} that connects.
+   *
+   * @param rootHints The root hints passed by the legacy browser when connecting.
+   * @return The specified max number of commands per media items, or 0 if not specified.
+   */
+  public static int extractMaxCommandsForMediaItemFromRootHints(Bundle rootHints) {
+    return max(
+        0,
+        rootHints.getInt(
+            androidx.media3.session.legacy.MediaConstants
+                .BROWSER_ROOT_HINTS_KEY_CUSTOM_BROWSER_ACTION_LIMIT,
+            /* defaultValue= */ 0));
+  }
+
+  private static boolean convertToIsEnded(
+      PlaybackStateCompat playbackStateCompat,
+      @Nullable MediaMetadataCompat currentMediaMetadata,
+      long timeDiffMs) {
+    long durationMs = convertToDurationMs(currentMediaMetadata);
+    if (durationMs == C.TIME_UNSET) {
+      return false;
+    }
+    long currentPositionMs =
+        convertToCurrentPositionMs(playbackStateCompat, currentMediaMetadata, timeDiffMs);
+    return currentPositionMs >= durationMs;
   }
 
   private static byte[] convertToByteArray(Bitmap bitmap) throws IOException {

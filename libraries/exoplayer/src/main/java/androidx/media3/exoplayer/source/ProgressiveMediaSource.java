@@ -22,8 +22,10 @@ import android.os.Looper;
 import androidx.annotation.GuardedBy;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
+import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.Timeline;
+import androidx.media3.common.util.Consumer;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DataSource;
@@ -31,13 +33,21 @@ import androidx.media3.datasource.TransferListener;
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManagerProvider;
 import androidx.media3.exoplayer.drm.DrmSessionManager;
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider;
+import androidx.media3.exoplayer.trackselection.ExoTrackSelection;
 import androidx.media3.exoplayer.upstream.Allocator;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
+import androidx.media3.exoplayer.util.ReleasableExecutor;
 import androidx.media3.extractor.DefaultExtractorsFactory;
 import androidx.media3.extractor.Extractor;
+import androidx.media3.extractor.ExtractorOutput;
 import androidx.media3.extractor.ExtractorsFactory;
+import androidx.media3.extractor.SeekMap;
+import androidx.media3.extractor.TrackOutput;
+import com.google.common.base.Supplier;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
+import java.util.Objects;
+import java.util.concurrent.Executor;
 
 /**
  * Provides one period that loads data from a {@link Uri} and extracted using an {@link Extractor}.
@@ -54,6 +64,24 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 public final class ProgressiveMediaSource extends BaseMediaSource
     implements ProgressiveMediaPeriod.Listener {
 
+  /**
+   * A listener of {@linkplain ProgressiveMediaSource progressive media sources}, which will be
+   * notified of source events.
+   */
+  public interface Listener {
+
+    /**
+     * Called when the {@link SeekMap} of the source has been extracted from the stream.
+     *
+     * <p>Called on the playback thread.
+     *
+     * @param source The {@link MediaSource} whose {@link SeekMap} has been extracted from the
+     *     stream.
+     * @param seekMap The source's {@link SeekMap}.
+     */
+    void onSeekMap(MediaSource source, SeekMap seekMap);
+  }
+
   /** Factory for {@link ProgressiveMediaSource}s. */
   @SuppressWarnings("deprecation") // Implement deprecated type for backwards compatibility.
   public static final class Factory implements MediaSourceFactory {
@@ -64,6 +92,9 @@ public final class ProgressiveMediaSource extends BaseMediaSource
     private DrmSessionManagerProvider drmSessionManagerProvider;
     private LoadErrorHandlingPolicy loadErrorHandlingPolicy;
     private int continueLoadingCheckIntervalBytes;
+    @Nullable private Supplier<ReleasableExecutor> downloadExecutorSupplier;
+    private int singleTrackId;
+    @Nullable private Format singleTrackFormat;
 
     /**
      * Creates a new factory for {@link ProgressiveMediaSource}s.
@@ -184,6 +215,25 @@ public final class ProgressiveMediaSource extends BaseMediaSource
       return this;
     }
 
+    /**
+     * Allows the {@link ProgressiveMediaSource} to complete preparation without reading any data.
+     *
+     * <p>This must only be set if the source is guaranteed to emit a single track with the provided
+     * ID and format.
+     *
+     * <p>Data will only be loaded if the track is selected with {@link
+     * MediaPeriod#selectTracks(ExoTrackSelection[], boolean[], SampleStream[], boolean[], long)}
+     *
+     * @param trackId The ID of the track to pass to {@link ExtractorOutput#track}
+     * @param format The format of the track to pass to {@link TrackOutput#format}.
+     */
+    @CanIgnoreReturnValue
+    /* package */ Factory enableLazyLoadingWithSingleTrack(int trackId, Format format) {
+      this.singleTrackId = trackId;
+      this.singleTrackFormat = checkNotNull(format);
+      return this;
+    }
+
     @CanIgnoreReturnValue
     @Override
     public Factory setDrmSessionManagerProvider(
@@ -194,6 +244,23 @@ public final class ProgressiveMediaSource extends BaseMediaSource
               "MediaSource.Factory#setDrmSessionManagerProvider no longer handles null by"
                   + " instantiating a new DefaultDrmSessionManagerProvider. Explicitly construct"
                   + " and pass an instance in order to retain the old behavior.");
+      return this;
+    }
+
+    /**
+     * Sets a supplier for an {@link Executor} that is used for loading the media.
+     *
+     * @param downloadExecutor A {@link Supplier} that provides an externally managed {@link
+     *     Executor} for downloading and extraction.
+     * @param downloadExecutorReleaser A callback triggered once a load task is finished and a
+     *     supplied executor is no longer required.
+     * @return This factory, for convenience.
+     */
+    @CanIgnoreReturnValue
+    public <T extends Executor> Factory setDownloadExecutor(
+        Supplier<T> downloadExecutor, Consumer<T> downloadExecutorReleaser) {
+      this.downloadExecutorSupplier =
+          () -> ReleasableExecutor.from(downloadExecutor.get(), downloadExecutorReleaser);
       return this;
     }
 
@@ -213,7 +280,10 @@ public final class ProgressiveMediaSource extends BaseMediaSource
           progressiveMediaExtractorFactory,
           drmSessionManagerProvider.get(mediaItem),
           loadErrorHandlingPolicy,
-          continueLoadingCheckIntervalBytes);
+          continueLoadingCheckIntervalBytes,
+          singleTrackId,
+          singleTrackFormat,
+          downloadExecutorSupplier);
     }
 
     @Override
@@ -233,6 +303,21 @@ public final class ProgressiveMediaSource extends BaseMediaSource
   private final DrmSessionManager drmSessionManager;
   private final LoadErrorHandlingPolicy loadableLoadErrorHandlingPolicy;
   private final int continueLoadingCheckIntervalBytes;
+
+  /**
+   * The ID passed to {@link Factory#enableLazyLoadingWithSingleTrack(int, Format)}. Only valid if
+   * {@link #singleTrackFormat} is non-null.
+   */
+  private final int singleTrackId;
+
+  /**
+   * The {@link Format} passed to {@link Factory#enableLazyLoadingWithSingleTrack(int, Format)}, or
+   * {@code null} if not set.
+   */
+  @Nullable private final Format singleTrackFormat;
+
+  @Nullable private final Supplier<ReleasableExecutor> downloadExecutorSupplier;
+
   private boolean timelineIsPlaceholder;
   private long timelineDurationUs;
   private boolean timelineIsSeekable;
@@ -242,21 +327,29 @@ public final class ProgressiveMediaSource extends BaseMediaSource
   @GuardedBy("this")
   private MediaItem mediaItem;
 
+  @Nullable private Listener listener;
+
   private ProgressiveMediaSource(
       MediaItem mediaItem,
       DataSource.Factory dataSourceFactory,
       ProgressiveMediaExtractor.Factory progressiveMediaExtractorFactory,
       DrmSessionManager drmSessionManager,
       LoadErrorHandlingPolicy loadableLoadErrorHandlingPolicy,
-      int continueLoadingCheckIntervalBytes) {
+      int continueLoadingCheckIntervalBytes,
+      int singleTrackId,
+      @Nullable Format singleTrackFormat,
+      @Nullable Supplier<ReleasableExecutor> downloadExecutorSupplier) {
     this.mediaItem = mediaItem;
     this.dataSourceFactory = dataSourceFactory;
     this.progressiveMediaExtractorFactory = progressiveMediaExtractorFactory;
     this.drmSessionManager = drmSessionManager;
     this.loadableLoadErrorHandlingPolicy = loadableLoadErrorHandlingPolicy;
     this.continueLoadingCheckIntervalBytes = continueLoadingCheckIntervalBytes;
+    this.singleTrackFormat = singleTrackFormat;
+    this.singleTrackId = singleTrackId;
     this.timelineIsPlaceholder = true;
     this.timelineDurationUs = C.TIME_UNSET;
+    this.downloadExecutorSupplier = downloadExecutorSupplier;
   }
 
   @Override
@@ -271,7 +364,7 @@ public final class ProgressiveMediaSource extends BaseMediaSource
     return newConfiguration != null
         && newConfiguration.uri.equals(existingConfiguration.uri)
         && newConfiguration.imageDurationMs == existingConfiguration.imageDurationMs
-        && Util.areEqual(newConfiguration.customCacheKey, existingConfiguration.customCacheKey);
+        && Objects.equals(newConfiguration.customCacheKey, existingConfiguration.customCacheKey);
   }
 
   @Override
@@ -312,7 +405,10 @@ public final class ProgressiveMediaSource extends BaseMediaSource
         allocator,
         localConfiguration.customCacheKey,
         continueLoadingCheckIntervalBytes,
-        Util.msToUs(localConfiguration.imageDurationMs));
+        singleTrackId,
+        singleTrackFormat,
+        Util.msToUs(localConfiguration.imageDurationMs),
+        downloadExecutorSupplier != null ? downloadExecutorSupplier.get() : null);
   }
 
   @Override
@@ -325,12 +421,31 @@ public final class ProgressiveMediaSource extends BaseMediaSource
     drmSessionManager.release();
   }
 
+  /**
+   * Sets the {@link Listener}.
+   *
+   * <p>This method must be called on the playback thread.
+   */
+  public void setListener(Listener listener) {
+    this.listener = listener;
+  }
+
+  /**
+   * Clears the {@link Listener}.
+   *
+   * <p>This method must be called on the playback thread.
+   */
+  public void clearListener() {
+    this.listener = null;
+  }
+
   // ProgressiveMediaPeriod.Listener implementation.
 
   @Override
-  public void onSourceInfoRefreshed(long durationUs, boolean isSeekable, boolean isLive) {
+  public void onSourceInfoRefreshed(long durationUs, SeekMap seekMap, boolean isLive) {
     // If we already have the duration from a previous source info refresh, use it.
     durationUs = durationUs == C.TIME_UNSET ? timelineDurationUs : durationUs;
+    boolean isSeekable = seekMap.isSeekable();
     if (!timelineIsPlaceholder
         && timelineDurationUs == durationUs
         && timelineIsSeekable == isSeekable
@@ -343,6 +458,9 @@ public final class ProgressiveMediaSource extends BaseMediaSource
     timelineIsLive = isLive;
     timelineIsPlaceholder = false;
     notifySourceInfoRefreshed();
+    if (listener != null) {
+      listener.onSeekMap(this, seekMap);
+    }
   }
 
   // Internal methods.

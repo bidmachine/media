@@ -16,7 +16,6 @@
 package androidx.media3.common;
 
 import android.os.Bundle;
-import androidx.annotation.DoNotInline;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.media3.common.util.UnstableApi;
@@ -37,7 +36,6 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 public final class AudioAttributes {
 
   /** A direct wrapper around {@link android.media.AudioAttributes}. */
-  @RequiresApi(21)
   public static final class AudioAttributesV21 {
     public final android.media.AudioAttributes audioAttributes;
 
@@ -165,12 +163,48 @@ public final class AudioAttributes {
    * <p>Some fields are ignored if the corresponding {@link android.media.AudioAttributes.Builder}
    * setter is not available on the current API level.
    */
-  @RequiresApi(21)
   public AudioAttributesV21 getAudioAttributesV21() {
     if (audioAttributesV21 == null) {
       audioAttributesV21 = new AudioAttributesV21(this);
     }
     return audioAttributesV21;
+  }
+
+  /** Returns the {@link C.StreamType} corresponding to these audio attributes. */
+  @UnstableApi
+  public @C.StreamType int getStreamType() {
+    // Flags to stream type mapping
+    if ((flags & C.FLAG_AUDIBILITY_ENFORCED) == C.FLAG_AUDIBILITY_ENFORCED) {
+      return C.STREAM_TYPE_SYSTEM;
+    }
+    // Usage to stream type mapping
+    switch (usage) {
+      case C.USAGE_ASSISTANCE_SONIFICATION:
+        return C.STREAM_TYPE_SYSTEM;
+      case C.USAGE_VOICE_COMMUNICATION:
+        return C.STREAM_TYPE_VOICE_CALL;
+      case C.USAGE_VOICE_COMMUNICATION_SIGNALLING:
+        return C.STREAM_TYPE_DTMF;
+      case C.USAGE_ALARM:
+        return C.STREAM_TYPE_ALARM;
+      case C.USAGE_NOTIFICATION_RINGTONE:
+        return C.STREAM_TYPE_RING;
+      case C.USAGE_NOTIFICATION:
+      case C.USAGE_NOTIFICATION_COMMUNICATION_REQUEST:
+      case C.USAGE_NOTIFICATION_COMMUNICATION_INSTANT:
+      case C.USAGE_NOTIFICATION_COMMUNICATION_DELAYED:
+      case C.USAGE_NOTIFICATION_EVENT:
+        return C.STREAM_TYPE_NOTIFICATION;
+      case C.USAGE_ASSISTANCE_ACCESSIBILITY:
+        return C.STREAM_TYPE_ACCESSIBILITY;
+      case C.USAGE_MEDIA:
+      case C.USAGE_GAME:
+      case C.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE:
+      case C.USAGE_ASSISTANT:
+      case C.USAGE_UNKNOWN:
+      default:
+        return C.STREAM_TYPE_MUSIC;
+    }
   }
 
   @Override
@@ -242,7 +276,6 @@ public final class AudioAttributes {
 
   @RequiresApi(29)
   private static final class Api29 {
-    @DoNotInline
     public static void setAllowedCapturePolicy(
         android.media.AudioAttributes.Builder builder,
         @C.AudioAllowedCapturePolicy int allowedCapturePolicy) {
@@ -252,7 +285,6 @@ public final class AudioAttributes {
 
   @RequiresApi(32)
   private static final class Api32 {
-    @DoNotInline
     public static void setSpatializationBehavior(
         android.media.AudioAttributes.Builder builder,
         @C.SpatializationBehavior int spatializationBehavior) {

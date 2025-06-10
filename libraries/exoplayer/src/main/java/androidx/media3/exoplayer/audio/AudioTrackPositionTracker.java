@@ -284,8 +284,9 @@ import java.lang.reflect.Method;
     resetSyncParams();
   }
 
-  public long getCurrentPositionUs(boolean sourceEnded) {
-    if (checkNotNull(this.audioTrack).getPlayState() == PLAYSTATE_PLAYING) {
+  public long getCurrentPositionUs() {
+    AudioTrack audioTrack = checkNotNull(this.audioTrack);
+    if (audioTrack.getPlayState() == PLAYSTATE_PLAYING) {
       maybeSampleSyncParams();
     }
 
@@ -306,7 +307,11 @@ import java.lang.reflect.Method;
     } else {
       if (playheadOffsetCount == 0) {
         // The AudioTrack has started, but we don't have any samples to compute a smoothed position.
-        positionUs = getPlaybackHeadPositionUs();
+        positionUs =
+            stopTimestampUs != C.TIME_UNSET
+                ? sampleCountToDurationUs(
+                    getSimulatedPlaybackHeadPositionAfterStop(), outputSampleRate)
+                : getPlaybackHeadPositionUs();
       } else {
         // getPlaybackHeadPositionUs() only has a granularity of ~20 ms, so we base the position off
         // the system clock (and a smoothed offset between it and the playhead position) so as to
@@ -315,8 +320,11 @@ import java.lang.reflect.Method;
             Util.getMediaDurationForPlayoutDuration(
                 systemTimeUs + smoothedPlayheadOffsetUs, audioTrackPlaybackSpeed);
       }
-      if (!sourceEnded) {
-        positionUs = max(0, positionUs - latencyUs);
+
+      positionUs = max(0, positionUs - latencyUs);
+      if (stopTimestampUs != C.TIME_UNSET) {
+        positionUs =
+            min(sampleCountToDurationUs(endPlaybackHeadPosition, outputSampleRate), positionUs);
       }
     }
 
@@ -340,7 +348,9 @@ import java.lang.reflect.Method;
       positionUs /= 1000;
     }
 
-    if (!notifiedPositionIncreasing && positionUs > lastPositionUs) {
+    if (!notifiedPositionIncreasing
+        && positionUs > lastPositionUs
+        && audioTrack.getPlayState() == AudioTrack.PLAYSTATE_PLAYING) {
       notifiedPositionIncreasing = true;
       long mediaDurationSinceLastPositionUs = Util.usToMs(positionUs - lastPositionUs);
       long playoutDurationSinceLastPositionUs =
@@ -447,8 +457,7 @@ import java.lang.reflect.Method;
    * @return Whether the audio track has any pending data to play out.
    */
   public boolean hasPendingData(long writtenFrames) {
-    long currentPositionUs = getCurrentPositionUs(/* sourceEnded= */ false);
-    return writtenFrames > durationUsToSampleCount(currentPositionUs, outputSampleRate)
+    return writtenFrames > durationUsToSampleCount(getCurrentPositionUs(), outputSampleRate)
         || forceHasPendingData();
   }
 
@@ -626,25 +635,30 @@ import java.lang.reflect.Method;
    * @return The playback head position, in frames.
    */
   private long getPlaybackHeadPosition() {
-    long currentTimeMs = clock.elapsedRealtime();
     if (stopTimestampUs != C.TIME_UNSET) {
-      if (checkNotNull(this.audioTrack).getPlayState() == AudioTrack.PLAYSTATE_PAUSED) {
-        // If AudioTrack is paused while stopping, then return cached playback head position.
-        return stopPlaybackHeadPosition;
-      }
-      // Simulate the playback head position up to the total number of frames submitted.
-      long elapsedTimeSinceStopUs = msToUs(currentTimeMs) - stopTimestampUs;
-      long mediaTimeSinceStopUs =
-          Util.getMediaDurationForPlayoutDuration(elapsedTimeSinceStopUs, audioTrackPlaybackSpeed);
-      long framesSinceStop = durationUsToSampleCount(mediaTimeSinceStopUs, outputSampleRate);
-      return min(endPlaybackHeadPosition, stopPlaybackHeadPosition + framesSinceStop);
+      long simulatedPlaybackHeadPositionAfterStop = getSimulatedPlaybackHeadPositionAfterStop();
+      return min(endPlaybackHeadPosition, simulatedPlaybackHeadPositionAfterStop);
     }
+    long currentTimeMs = clock.elapsedRealtime();
     if (currentTimeMs - lastRawPlaybackHeadPositionSampleTimeMs
         >= RAW_PLAYBACK_HEAD_POSITION_UPDATE_INTERVAL_MS) {
       updateRawPlaybackHeadPosition(currentTimeMs);
       lastRawPlaybackHeadPositionSampleTimeMs = currentTimeMs;
     }
     return rawPlaybackHeadPosition + sumRawPlaybackHeadPosition + (rawPlaybackHeadWrapCount << 32);
+  }
+
+  private long getSimulatedPlaybackHeadPositionAfterStop() {
+    if (checkNotNull(this.audioTrack).getPlayState() == AudioTrack.PLAYSTATE_PAUSED) {
+      // If AudioTrack is paused while stopping, then return cached playback head position.
+      return stopPlaybackHeadPosition;
+    }
+    // Simulate the playback head position up to the total number of frames submitted.
+    long elapsedTimeSinceStopUs = msToUs(clock.elapsedRealtime()) - stopTimestampUs;
+    long mediaTimeSinceStopUs =
+        Util.getMediaDurationForPlayoutDuration(elapsedTimeSinceStopUs, audioTrackPlaybackSpeed);
+    long framesSinceStop = durationUsToSampleCount(mediaTimeSinceStopUs, outputSampleRate);
+    return stopPlaybackHeadPosition + framesSinceStop;
   }
 
   private void updateRawPlaybackHeadPosition(long currentTimeMs) {

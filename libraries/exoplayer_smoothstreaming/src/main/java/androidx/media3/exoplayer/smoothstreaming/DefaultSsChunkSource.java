@@ -203,6 +203,7 @@ public class DefaultSsChunkSource implements SsChunkSource {
               streamElement.timescale,
               C.TIME_UNSET,
               manifest.durationUs,
+              /* mediaDurationUs= */ manifest.durationUs,
               format,
               Track.TRANSFORMATION_NONE,
               trackEncryptionBoxes,
@@ -359,17 +360,14 @@ public class DefaultSsChunkSource implements SsChunkSource {
     @Nullable CmcdData.Factory cmcdDataFactory = null;
     if (cmcdConfiguration != null) {
       cmcdDataFactory =
-          new CmcdData.Factory(
-                  cmcdConfiguration,
-                  trackSelection,
-                  max(0, bufferedDurationUs),
-                  /* playbackRate= */ loadingInfo.playbackSpeed,
-                  /* streamingFormat= */ CmcdData.Factory.STREAMING_FORMAT_SS,
-                  /* isLive= */ manifest.isLive,
-                  /* didRebuffer= */ loadingInfo.rebufferedSince(lastChunkRequestRealtimeMs),
-                  /* isBufferEmpty= */ queue.isEmpty())
-              .setChunkDurationUs(chunkEndTimeUs - chunkStartTimeUs)
-              .setObjectType(CmcdData.Factory.getObjectType(trackSelection));
+          new CmcdData.Factory(cmcdConfiguration, CmcdData.STREAMING_FORMAT_SS)
+              .setTrackSelection(trackSelection)
+              .setBufferedDurationUs(max(0, bufferedDurationUs))
+              .setPlaybackRate(loadingInfo.playbackSpeed)
+              .setIsLive(manifest.isLive)
+              .setDidRebuffer(loadingInfo.rebufferedSince(lastChunkRequestRealtimeMs))
+              .setIsBufferEmpty(queue.isEmpty())
+              .setChunkDurationUs(chunkEndTimeUs - chunkStartTimeUs);
 
       if (chunkIndex + 1 < streamElement.chunkCount) {
         Uri nextUri = streamElement.buildRequestUri(manifestTrackIndex, chunkIndex + 1);

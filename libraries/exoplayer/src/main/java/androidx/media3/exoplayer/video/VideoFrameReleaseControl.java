@@ -15,6 +15,7 @@
  */
 package androidx.media3.exoplayer.video;
 
+import static androidx.media3.common.util.Assertions.checkArgument;
 import static androidx.media3.common.util.Util.msToUs;
 import static java.lang.Math.min;
 import static java.lang.annotation.ElementType.TYPE_USE;
@@ -22,6 +23,7 @@ import static java.lang.annotation.ElementType.TYPE_USE;
 import android.content.Context;
 import android.os.SystemClock;
 import android.view.Surface;
+import androidx.annotation.FloatRange;
 import androidx.annotation.IntDef;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
@@ -41,7 +43,7 @@ public final class VideoFrameReleaseControl {
 
   /**
    * The frame release action returned by {@link #getFrameReleaseAction(long, long, long, long,
-   * boolean, FrameReleaseInfo)}.
+   * boolean, boolean, FrameReleaseInfo)}.
    *
    * <p>One of {@link #FRAME_RELEASE_IMMEDIATELY}, {@link #FRAME_RELEASE_SCHEDULED}, {@link
    * #FRAME_RELEASE_DROP}, {@link #FRAME_RELEASE_IGNORE}, {@link ##FRAME_RELEASE_SKIP} or {@link
@@ -178,14 +180,16 @@ public final class VideoFrameReleaseControl {
   private boolean joiningRenderNextFrameImmediately;
   private float playbackSpeed;
   private Clock clock;
+  private boolean hasOutputSurface;
+  private boolean frameReadyWithoutSurface;
 
   /**
    * Creates an instance.
    *
    * @param applicationContext The application context.
    * @param frameTimingEvaluator The {@link FrameTimingEvaluator} that will assist in {@linkplain
-   *     #getFrameReleaseAction(long, long, long, long, boolean, FrameReleaseInfo) frame release
-   *     actions}.
+   *     #getFrameReleaseAction(long, long, long, long, boolean, boolean, FrameReleaseInfo) frame
+   *     release actions}.
    * @param allowedJoiningTimeMs The maximum duration in milliseconds for which the renderer can
    *     attempt to seamlessly join an ongoing playback.
    */
@@ -238,6 +242,8 @@ public final class VideoFrameReleaseControl {
 
   /** Called when the display surface changed. */
   public void setOutputSurface(@Nullable Surface outputSurface) {
+    hasOutputSurface = outputSurface != null;
+    frameReadyWithoutSurface = false;
     frameReleaseHelper.onSurfaceChanged(outputSurface);
     lowerFirstFrameState(C.FIRST_FRAME_NOT_RENDERED);
   }
@@ -277,12 +283,16 @@ public final class VideoFrameReleaseControl {
   /**
    * Whether the release control is ready to start playback.
    *
-   * @see Renderer#isReady()
-   * @param rendererReady Whether the renderer is ready.
+   * <p>The renderer should be {@linkplain Renderer#isReady() ready} if and only if the release
+   * control is ready.
+   *
+   * @param rendererOtherwiseReady Whether the renderer is ready except for the release control.
    * @return Whether the release control is ready.
    */
-  public boolean isReady(boolean rendererReady) {
-    if (rendererReady && firstFrameState == C.FIRST_FRAME_RENDERED) {
+  public boolean isReady(boolean rendererOtherwiseReady) {
+    if (rendererOtherwiseReady
+        && (firstFrameState == C.FIRST_FRAME_RENDERED
+            || (!hasOutputSurface && frameReadyWithoutSurface))) {
       // Ready. If we were joining then we've now joined, so clear the joining deadline.
       joiningDeadlineMs = C.TIME_UNSET;
       return true;
@@ -302,7 +312,7 @@ public final class VideoFrameReleaseControl {
   /**
    * Joins the release control to a new stream.
    *
-   * <p>The release control will pretend to be {@linkplain #isReady ready} for short time even if
+   * <p>The release control will pretend to be {@linkplain #isReady ready} for a short time even if
    * the first frame hasn't been rendered yet to avoid interrupting an ongoing playback.
    *
    * @param renderNextFrameImmediately Whether the next frame should be released as soon as possible
@@ -323,6 +333,8 @@ public final class VideoFrameReleaseControl {
    * @param elapsedRealtimeUs {@link android.os.SystemClock#elapsedRealtime()} in microseconds,
    *     taken approximately at the time the playback position was {@code positionUs}.
    * @param outputStreamStartPositionUs The stream's start position, in microseconds.
+   * @param isDecodeOnlyFrame Whether the frame is decode-only because its presentation time is
+   *     before the intended start time.
    * @param isLastFrame Whether the frame is known to contain the last frame of the current stream.
    * @param frameReleaseInfo A {@link FrameReleaseInfo} that will be filled with detailed data only
    *     if the method returns {@link #FRAME_RELEASE_IMMEDIATELY} or {@link
@@ -335,6 +347,7 @@ public final class VideoFrameReleaseControl {
       long positionUs,
       long elapsedRealtimeUs,
       long outputStreamStartPositionUs,
+      boolean isDecodeOnlyFrame,
       boolean isLastFrame,
       FrameReleaseInfo frameReleaseInfo)
       throws ExoPlaybackException {
@@ -351,6 +364,24 @@ public final class VideoFrameReleaseControl {
     frameReleaseInfo.earlyUs =
         calculateEarlyTimeUs(positionUs, elapsedRealtimeUs, presentationTimeUs);
 
+    if (isDecodeOnlyFrame && !isLastFrame) {
+      return FRAME_RELEASE_SKIP;
+    }
+    if (!hasOutputSurface) {
+      frameReadyWithoutSurface = true;
+      // Skip frames in sync with playback, so we'll be at the right frame if a surface is set.
+      if (frameTimingEvaluator.shouldIgnoreFrame(
+          frameReleaseInfo.earlyUs,
+          positionUs,
+          elapsedRealtimeUs,
+          isLastFrame,
+          /* treatDroppedBuffersAsSkipped= */ true)) {
+        return FRAME_RELEASE_IGNORE;
+      }
+      return started && frameReleaseInfo.earlyUs < 30_000
+          ? FRAME_RELEASE_SKIP
+          : FRAME_RELEASE_TRY_AGAIN_LATER;
+    }
     if (shouldForceRelease(positionUs, frameReleaseInfo.earlyUs, outputStreamStartPositionUs)) {
       return FRAME_RELEASE_IMMEDIATELY;
     }
@@ -389,8 +420,10 @@ public final class VideoFrameReleaseControl {
   }
 
   /**
-   * Change the {@link C.VideoChangeFrameRateStrategy}, used when calling {@link
+   * Changes the {@link C.VideoChangeFrameRateStrategy} used when calling {@link
    * Surface#setFrameRate}.
+   *
+   * <p>The default value is {@link C#VIDEO_CHANGE_FRAME_RATE_STRATEGY_ONLY_IF_SEAMLESS}.
    */
   public void setChangeFrameRateStrategy(
       @C.VideoChangeFrameRateStrategy int changeFrameRateStrategy) {
@@ -398,7 +431,8 @@ public final class VideoFrameReleaseControl {
   }
 
   /** Sets the playback speed. Called when the renderer playback speed changes. */
-  public void setPlaybackSpeed(float speed) {
+  public void setPlaybackSpeed(@FloatRange(from = 0, fromInclusive = false) float speed) {
+    checkArgument(speed > 0);
     if (speed == playbackSpeed) {
       return;
     }

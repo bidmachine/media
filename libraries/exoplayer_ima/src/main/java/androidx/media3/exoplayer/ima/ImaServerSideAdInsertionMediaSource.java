@@ -653,8 +653,8 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
     return newConfiguration != null
         && newConfiguration.uri.equals(existingConfiguration.uri)
         && newConfiguration.streamKeys.equals(existingConfiguration.streamKeys)
-        && Util.areEqual(newConfiguration.customCacheKey, existingConfiguration.customCacheKey)
-        && Util.areEqual(newConfiguration.drmConfiguration, existingConfiguration.drmConfiguration)
+        && Objects.equals(newConfiguration.customCacheKey, existingConfiguration.customCacheKey)
+        && Objects.equals(newConfiguration.drmConfiguration, existingConfiguration.drmConfiguration)
         && existingMediaItem.liveConfiguration.equals(mediaItem.liveConfiguration);
   }
 
@@ -861,7 +861,8 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
         mainHandler.post(
             () ->
                 setAdPlaybackState(
-                    new AdPlaybackState(adsId).withLivePostrollPlaceholderAppended()));
+                    new AdPlaybackState(adsId)
+                        .withLivePostrollPlaceholderAppended(/* isServerSideInserted= */ true)));
       }
       prepareChildSource(/* id= */ null, serverSideAdInsertionMediaSource);
     }
@@ -897,9 +898,7 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
 
   private static AdPlaybackState setVodAdInPlaceholder(Ad ad, AdPlaybackState adPlaybackState) {
     AdPodInfo adPodInfo = ad.getAdPodInfo();
-    // Handle post rolls that have a podIndex of -1.
-    int adGroupIndex =
-        adPodInfo.getPodIndex() == -1 ? adPlaybackState.adGroupCount - 1 : adPodInfo.getPodIndex();
+    int adGroupIndex = getAdGroupIndexFromAdPodInfo(adPodInfo, adPlaybackState);
     AdPlaybackState.AdGroup adGroup = adPlaybackState.getAdGroup(adGroupIndex);
     int adIndexInAdGroup = adPodInfo.getAdPosition() - 1;
     if (adGroup.count < adPodInfo.getTotalAds()) {
@@ -924,10 +923,25 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
 
   private static AdPlaybackState skipAd(Ad ad, AdPlaybackState adPlaybackState) {
     AdPodInfo adPodInfo = ad.getAdPodInfo();
-    int adGroupIndex = adPodInfo.getPodIndex();
+    int adGroupIndex = getAdGroupIndexFromAdPodInfo(adPodInfo, adPlaybackState);
     // IMA SDK always returns index starting at 1.
     int adIndexInAdGroup = adPodInfo.getAdPosition() - 1;
     return adPlaybackState.withSkippedAd(adGroupIndex, adIndexInAdGroup);
+  }
+
+  private static int getAdGroupIndexFromAdPodInfo(
+      AdPodInfo adPodInfo, AdPlaybackState adPlaybackState) {
+    int adPodIndex = adPodInfo.getPodIndex();
+    if (adPodIndex == -1) {
+      // Post-roll
+      return adPlaybackState.adGroupCount - 1;
+    }
+    if (adPlaybackState.getAdGroup(0).timeUs == 0) {
+      // When a pre-roll exists, the index starts at zero.
+      return adPodIndex;
+    }
+    // Mid-rolls always start at 1.
+    return adPodIndex - 1;
   }
 
   private final class ComponentListener
@@ -1021,7 +1035,7 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
 
     @Override
     public void onMetadata(Metadata metadata) {
-      if (!isCurrentAdPlaying(player, getMediaItem(), adsId)) {
+      if (!isCurrentlyPlayingMediaPeriodFromThisSource(player, getMediaItem(), adsId)) {
         return;
       }
       for (int i = 0; i < metadata.length(); i++) {
@@ -1041,14 +1055,15 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
 
     @Override
     public void onPlaybackStateChanged(@Player.State int state) {
-      if (state == Player.STATE_ENDED && isCurrentAdPlaying(player, getMediaItem(), adsId)) {
+      if (state == Player.STATE_ENDED
+          && isCurrentlyPlayingMediaPeriodFromThisSource(player, getMediaItem(), adsId)) {
         streamPlayer.onContentCompleted();
       }
     }
 
     @Override
     public void onVolumeChanged(float volume) {
-      if (!isCurrentAdPlaying(player, getMediaItem(), adsId)) {
+      if (!isCurrentlyPlayingMediaPeriodFromThisSource(player, getMediaItem(), adsId)) {
         return;
       }
       int volumePct = (int) Math.floor(volume * 100);
@@ -1312,7 +1327,7 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
 
     @Override
     public VideoProgressUpdate getContentProgress() {
-      if (!isCurrentAdPlaying(player, mediaItem, adsId)) {
+      if (!isCurrentlyPlayingMediaPeriodFromThisSource(player, mediaItem, adsId)) {
         return VideoProgressUpdate.VIDEO_TIME_NOT_READY;
       } else if (adPlaybackStates.isEmpty()) {
         return new VideoProgressUpdate(/* currentTimeMs= */ 0, /* durationMs= */ C.TIME_UNSET);
@@ -1428,9 +1443,9 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
     }
   }
 
-  private static boolean isCurrentAdPlaying(
+  private static boolean isCurrentlyPlayingMediaPeriodFromThisSource(
       Player player, MediaItem mediaItem, @Nullable Object adsId) {
-    if (player.getPlaybackState() == Player.STATE_IDLE) {
+    if (player.getPlaybackState() == Player.STATE_IDLE || player.getMediaItemCount() == 0) {
       return false;
     }
     Timeline.Period period = new Timeline.Period();
@@ -1510,7 +1525,8 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
   private class SinglePeriodLiveAdEventListener implements AdEventListener {
     @Override
     public void onAdEvent(AdEvent event) {
-      if (!Objects.equals(event.getType(), LOADED)) {
+      if (!Objects.equals(event.getType(), LOADED)
+          || !isCurrentlyPlayingMediaPeriodFromThisSource(player, getMediaItem(), adsId)) {
         return;
       }
       AdPlaybackState newAdPlaybackState = adPlaybackState;
@@ -1541,7 +1557,8 @@ public final class ImaServerSideAdInsertionMediaSource extends CompositeMediaSou
   private class MultiPeriodLiveAdEventListener implements AdEventListener {
     @Override
     public void onAdEvent(AdEvent event) {
-      if (!Objects.equals(event.getType(), LOADED)) {
+      if (!Objects.equals(event.getType(), LOADED)
+          || !isCurrentlyPlayingMediaPeriodFromThisSource(player, getMediaItem(), adsId)) {
         return;
       }
       AdPodInfo adPodInfo = event.getAd().getAdPodInfo();

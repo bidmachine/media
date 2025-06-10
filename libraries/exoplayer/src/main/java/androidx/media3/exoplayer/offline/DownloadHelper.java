@@ -41,12 +41,10 @@ import androidx.media3.datasource.TransferListener;
 import androidx.media3.exoplayer.DefaultRendererCapabilitiesList;
 import androidx.media3.exoplayer.ExoPlaybackException;
 import androidx.media3.exoplayer.LoadingInfo;
-import androidx.media3.exoplayer.Renderer;
 import androidx.media3.exoplayer.RendererCapabilities;
 import androidx.media3.exoplayer.RendererCapabilitiesList;
 import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.analytics.PlayerId;
-import androidx.media3.exoplayer.audio.AudioRendererEventListener;
 import androidx.media3.exoplayer.drm.DrmSessionManager;
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory;
 import androidx.media3.exoplayer.source.MediaPeriod;
@@ -66,7 +64,6 @@ import androidx.media3.exoplayer.trackselection.TrackSelectorResult;
 import androidx.media3.exoplayer.upstream.Allocator;
 import androidx.media3.exoplayer.upstream.BandwidthMeter;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
-import androidx.media3.exoplayer.video.VideoRendererEventListener;
 import androidx.media3.extractor.ExtractorsFactory;
 import java.io.IOException;
 import java.util.ArrayList;
@@ -98,29 +95,27 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 @UnstableApi
 public final class DownloadHelper {
 
-  /**
-   * Default track selection parameters for downloading, but without any {@link Context}
-   * constraints.
-   *
-   * <p>If possible, use {@link #getDefaultTrackSelectorParameters(Context)} instead.
-   *
-   * @see DefaultTrackSelector.Parameters#DEFAULT_WITHOUT_CONTEXT
-   */
-  public static final DefaultTrackSelector.Parameters
-      DEFAULT_TRACK_SELECTOR_PARAMETERS_WITHOUT_CONTEXT =
-          DefaultTrackSelector.Parameters.DEFAULT_WITHOUT_CONTEXT
-              .buildUpon()
-              .setForceHighestSupportedBitrate(true)
-              .setConstrainAudioChannelCountToDeviceCapabilities(false)
-              .build();
+  /** Default track selection parameters for downloading. */
+  public static final DefaultTrackSelector.Parameters DEFAULT_TRACK_SELECTOR_PARAMETERS =
+      DefaultTrackSelector.Parameters.DEFAULT
+          .buildUpon()
+          .setForceHighestSupportedBitrate(true)
+          .setConstrainAudioChannelCountToDeviceCapabilities(false)
+          .build();
 
-  /** Returns the default parameters used for track selection for downloading. */
+  /**
+   * @deprecated Use {@link #DEFAULT_TRACK_SELECTOR_PARAMETERS} instead.
+   */
+  @Deprecated
+  public static final DefaultTrackSelector.Parameters
+      DEFAULT_TRACK_SELECTOR_PARAMETERS_WITHOUT_CONTEXT = DEFAULT_TRACK_SELECTOR_PARAMETERS;
+
+  /**
+   * @deprecated Use {@link #DEFAULT_TRACK_SELECTOR_PARAMETERS} instead.
+   */
+  @Deprecated
   public static DefaultTrackSelector.Parameters getDefaultTrackSelectorParameters(Context context) {
-    return DefaultTrackSelector.Parameters.getDefaults(context)
-        .buildUpon()
-        .setForceHighestSupportedBitrate(true)
-        .setConstrainAudioChannelCountToDeviceCapabilities(false)
-        .build();
+    return DEFAULT_TRACK_SELECTOR_PARAMETERS;
   }
 
   /** A callback to be notified when the {@link DownloadHelper} is prepared. */
@@ -146,28 +141,6 @@ public final class DownloadHelper {
   public static class LiveContentUnsupportedException extends IOException {}
 
   /**
-   * @deprecated This method leaks un-released {@link Renderer} instances. There is no direct
-   *     replacement. Equivalent functionality can be implemented by constructing the renderer
-   *     instances, calling {@link Renderer#getCapabilities()} on each one, then releasing the
-   *     renderers when the capabilities are no longer required.
-   */
-  @Deprecated
-  public static RendererCapabilities[] getRendererCapabilities(RenderersFactory renderersFactory) {
-    Renderer[] renderers =
-        renderersFactory.createRenderers(
-            Util.createHandlerForCurrentOrMainLooper(),
-            new VideoRendererEventListener() {},
-            new AudioRendererEventListener() {},
-            (cues) -> {},
-            (metadata) -> {});
-    RendererCapabilities[] capabilities = new RendererCapabilities[renderers.length];
-    for (int i = 0; i < renderers.length; i++) {
-      capabilities[i] = renderers[i].getCapabilities();
-    }
-    return capabilities;
-  }
-
-  /**
    * Creates a {@link DownloadHelper} for the given progressive media item.
    *
    * @param context The context.
@@ -179,7 +152,7 @@ public final class DownloadHelper {
     Assertions.checkArgument(isProgressive(checkNotNull(mediaItem.localConfiguration)));
     return forMediaItem(
         mediaItem,
-        getDefaultTrackSelectorParameters(context),
+        DEFAULT_TRACK_SELECTOR_PARAMETERS,
         /* renderersFactory= */ null,
         /* dataSourceFactory= */ null,
         /* drmSessionManager= */ null);
@@ -207,7 +180,7 @@ public final class DownloadHelper {
       @Nullable DataSource.Factory dataSourceFactory) {
     return forMediaItem(
         mediaItem,
-        getDefaultTrackSelectorParameters(context),
+        DEFAULT_TRACK_SELECTOR_PARAMETERS,
         renderersFactory,
         dataSourceFactory,
         /* drmSessionManager= */ null);
@@ -324,26 +297,6 @@ public final class DownloadHelper {
   private List<ExoTrackSelection> @MonotonicNonNull [][] trackSelectionsByPeriodAndRenderer;
   private List<ExoTrackSelection> @MonotonicNonNull [][]
       immutableTrackSelectionsByPeriodAndRenderer;
-
-  /**
-   * @deprecated The {@link Renderer} instances used to produce {@code rendererCapabilities} must be
-   *     kept alive for the lifetime of this {@code DownloadHelper} instance and then released (to
-   *     avoid a resource leak). Use {@link DownloadHelper#DownloadHelper(MediaItem, MediaSource,
-   *     TrackSelectionParameters, RendererCapabilitiesList)} instead to avoid needing to manually
-   *     manage this bookkeeping.
-   */
-  @Deprecated
-  public DownloadHelper(
-      MediaItem mediaItem,
-      @Nullable MediaSource mediaSource,
-      TrackSelectionParameters trackSelectionParameters,
-      RendererCapabilities[] rendererCapabilities) {
-    this(
-        mediaItem,
-        mediaSource,
-        trackSelectionParameters,
-        new UnreleaseableRendererCapabilitiesList(rendererCapabilities));
-  }
 
   /**
    * Creates download helper.
@@ -541,7 +494,7 @@ public final class DownloadHelper {
       assertPreparedWithMedia();
 
       TrackSelectionParameters.Builder parametersBuilder =
-          DEFAULT_TRACK_SELECTOR_PARAMETERS_WITHOUT_CONTEXT.buildUpon();
+          DEFAULT_TRACK_SELECTOR_PARAMETERS.buildUpon();
       // Prefer highest supported bitrate for downloads.
       parametersBuilder.setForceHighestSupportedBitrate(true);
       // Disable all non-audio track types supported by the renderers.
@@ -581,7 +534,7 @@ public final class DownloadHelper {
       assertPreparedWithMedia();
 
       TrackSelectionParameters.Builder parametersBuilder =
-          DEFAULT_TRACK_SELECTOR_PARAMETERS_WITHOUT_CONTEXT.buildUpon();
+          DEFAULT_TRACK_SELECTOR_PARAMETERS.buildUpon();
       parametersBuilder.setSelectUndeterminedTextLanguage(selectUndeterminedTextLanguage);
       // Prefer highest supported bitrate for downloads.
       parametersBuilder.setForceHighestSupportedBitrate(true);

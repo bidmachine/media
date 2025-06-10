@@ -31,6 +31,7 @@ import androidx.media3.extractor.ExtractorOutput;
 import androidx.media3.extractor.TrackOutput;
 import androidx.media3.extractor.ts.TsPayloadReader.TrackIdGenerator;
 import com.google.common.primitives.Ints;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.RequiresNonNull;
@@ -69,6 +70,7 @@ public final class DtsReader implements ElementaryStreamReader {
 
   @Nullable private final String language;
   private final @C.RoleFlags int roleFlags;
+  private final String containerMimeType;
 
   private @MonotonicNonNull String formatId;
   private @MonotonicNonNull TrackOutput output;
@@ -96,8 +98,13 @@ public final class DtsReader implements ElementaryStreamReader {
    * @param language Track language.
    * @param roleFlags Track role flags.
    * @param maxHeaderSize Maximum size of the header in a frame.
+   * @param containerMimeType The MIME type of the container holding the stream.
    */
-  public DtsReader(@Nullable String language, @C.RoleFlags int roleFlags, int maxHeaderSize) {
+  public DtsReader(
+      @Nullable String language,
+      @C.RoleFlags int roleFlags,
+      int maxHeaderSize,
+      String containerMimeType) {
     headerScratchBytes = new ParsableByteArray(new byte[maxHeaderSize]);
     state = STATE_FINDING_SYNC;
     timeUs = C.TIME_UNSET;
@@ -106,6 +113,7 @@ public final class DtsReader implements ElementaryStreamReader {
     uhdHeaderSize = C.LENGTH_UNSET;
     this.language = language;
     this.roleFlags = roleFlags;
+    this.containerMimeType = containerMimeType;
   }
 
   @Override
@@ -266,7 +274,8 @@ public final class DtsReader implements ElementaryStreamReader {
   private void parseCoreHeader() {
     byte[] frameData = headerScratchBytes.getData();
     if (format == null) {
-      format = DtsUtil.parseDtsFormat(frameData, formatId, language, roleFlags, null);
+      format =
+          DtsUtil.parseDtsFormat(frameData, formatId, language, roleFlags, containerMimeType, null);
       output.format(format);
     }
     sampleSize = DtsUtil.getDtsFrameSize(frameData);
@@ -308,11 +317,12 @@ public final class DtsReader implements ElementaryStreamReader {
     if (format == null
         || dtsHeader.channelCount != format.channelCount
         || dtsHeader.sampleRate != format.sampleRate
-        || !Util.areEqual(dtsHeader.mimeType, format.sampleMimeType)) {
+        || !Objects.equals(dtsHeader.mimeType, format.sampleMimeType)) {
       Format.Builder formatBuilder = format == null ? new Format.Builder() : format.buildUpon();
       format =
           formatBuilder
               .setId(formatId)
+              .setContainerMimeType(containerMimeType)
               .setSampleMimeType(dtsHeader.mimeType)
               .setChannelCount(dtsHeader.channelCount)
               .setSampleRate(dtsHeader.sampleRate)

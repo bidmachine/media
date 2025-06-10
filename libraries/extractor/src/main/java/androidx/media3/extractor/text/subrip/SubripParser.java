@@ -33,9 +33,9 @@ import androidx.media3.common.util.ParsableByteArray;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.extractor.text.CuesWithTiming;
 import androidx.media3.extractor.text.SubtitleParser;
-import com.google.common.base.Charsets;
 import com.google.common.collect.ImmutableList;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -60,7 +60,7 @@ public final class SubripParser implements SubtitleParser {
   private static final String TAG = "SubripParser";
 
   // Some SRT files don't include hours or milliseconds in the timecode, so we use optional groups.
-  private static final String SUBRIP_TIMECODE = "(?:(\\d+):)?(\\d+):(\\d+)(?:,(\\d+))?";
+  private static final String SUBRIP_TIMECODE = "(?:(\\d+):)?(\\d+):(\\d+)(?:,(\\d{3}))?";
   private static final Pattern SUBRIP_TIMING_LINE =
       Pattern.compile("\\s*(" + SUBRIP_TIMECODE + ")\\s*-->\\s*(" + SUBRIP_TIMECODE + ")\\s*");
 
@@ -193,7 +193,7 @@ public final class SubripParser implements SubtitleParser {
    */
   private Charset detectUtfCharset(ParsableByteArray data) {
     @Nullable Charset charset = data.readUtfCharsetFromBom();
-    return charset != null ? charset : Charsets.UTF_8;
+    return charset != null ? charset : StandardCharsets.UTF_8;
   }
 
   /**

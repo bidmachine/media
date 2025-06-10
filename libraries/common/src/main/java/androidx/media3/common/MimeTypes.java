@@ -44,6 +44,7 @@ public final class MimeTypes {
   public static final String VIDEO_WEBM = BASE_TYPE_VIDEO + "/webm";
   public static final String VIDEO_H263 = BASE_TYPE_VIDEO + "/3gpp";
   public static final String VIDEO_H264 = BASE_TYPE_VIDEO + "/avc";
+  @UnstableApi public static final String VIDEO_APV = BASE_TYPE_VIDEO + "/apv";
   public static final String VIDEO_H265 = BASE_TYPE_VIDEO + "/hevc";
   @UnstableApi public static final String VIDEO_VP8 = BASE_TYPE_VIDEO + "/x-vnd.on2.vp8";
   @UnstableApi public static final String VIDEO_VP9 = BASE_TYPE_VIDEO + "/x-vnd.on2.vp9";
@@ -62,6 +63,7 @@ public final class MimeTypes {
   public static final String VIDEO_MJPEG = BASE_TYPE_VIDEO + "/mjpeg";
   public static final String VIDEO_MP42 = BASE_TYPE_VIDEO + "/mp42";
   public static final String VIDEO_MP43 = BASE_TYPE_VIDEO + "/mp43";
+  @UnstableApi public static final String VIDEO_MV_HEVC = BASE_TYPE_VIDEO + "/mv-hevc";
   @UnstableApi public static final String VIDEO_RAW = BASE_TYPE_VIDEO + "/raw";
   @UnstableApi public static final String VIDEO_UNKNOWN = BASE_TYPE_VIDEO + "/x-unknown";
 
@@ -99,6 +101,7 @@ public final class MimeTypes {
   public static final String AUDIO_OGG = BASE_TYPE_AUDIO + "/ogg";
   public static final String AUDIO_WAV = BASE_TYPE_AUDIO + "/wav";
   public static final String AUDIO_MIDI = BASE_TYPE_AUDIO + "/midi";
+  @UnstableApi public static final String AUDIO_IAMF = BASE_TYPE_AUDIO + "/iamf";
 
   @UnstableApi
   public static final String AUDIO_EXOPLAYER_MIDI = BASE_TYPE_AUDIO + "/x-exoplayer-midi";
@@ -139,9 +142,14 @@ public final class MimeTypes {
   public static final String APPLICATION_VOBSUB = BASE_TYPE_APPLICATION + "/vobsub";
   public static final String APPLICATION_PGS = BASE_TYPE_APPLICATION + "/pgs";
   @UnstableApi public static final String APPLICATION_SCTE35 = BASE_TYPE_APPLICATION + "/x-scte35";
+  public static final String APPLICATION_SDP = BASE_TYPE_APPLICATION + "/sdp";
 
   @UnstableApi
   public static final String APPLICATION_CAMERA_MOTION = BASE_TYPE_APPLICATION + "/x-camera-motion";
+
+  @UnstableApi
+  public static final String APPLICATION_DEPTH_METADATA =
+      BASE_TYPE_APPLICATION + "/x-depth-metadata";
 
   @UnstableApi public static final String APPLICATION_EMSG = BASE_TYPE_APPLICATION + "/x-emsg";
   public static final String APPLICATION_DVBSUBS = BASE_TYPE_APPLICATION + "/dvbsubs";
@@ -573,6 +581,36 @@ public final class MimeTypes {
   }
 
   /**
+   * Returns whether the given {@code codecs} and {@code supplementalCodecs} correspond to a valid
+   * Dolby Vision codec.
+   *
+   * @param codecs An RFC 6381 codecs string for the base codec. may be null.
+   * @param supplementalCodecs An optional RFC 6381 codecs string for supplemental codecs.
+   * @return Whether the given {@code codecs} and {@code supplementalCodecs} correspond to a valid
+   *     Dolby Vision codec.
+   */
+  @UnstableApi
+  public static boolean isDolbyVisionCodec(
+      @Nullable String codecs, @Nullable String supplementalCodecs) {
+    if (codecs == null) {
+      return false;
+    }
+    if (codecs.startsWith("dvhe") || codecs.startsWith("dvh1")) {
+      // profile 5
+      return true;
+    }
+    if (supplementalCodecs == null) {
+      return false;
+    }
+    // profiles 8, 9 and 10
+    return (supplementalCodecs.startsWith("dvhe") && codecs.startsWith("hev1"))
+        || (supplementalCodecs.startsWith("dvh1") && codecs.startsWith("hvc1"))
+        || (supplementalCodecs.startsWith("dvav") && codecs.startsWith("avc3"))
+        || (supplementalCodecs.startsWith("dva1") && codecs.startsWith("avc1"))
+        || (supplementalCodecs.startsWith("dav1") && codecs.startsWith("av01"));
+  }
+
+  /**
    * Returns the {@link C.TrackType track type} constant corresponding to a specified MIME type,
    * which may be {@link C#TRACK_TYPE_UNKNOWN} if it could not be determined.
    *
@@ -594,7 +632,9 @@ public final class MimeTypes {
       return C.TRACK_TYPE_IMAGE;
     } else if (APPLICATION_ID3.equals(mimeType)
         || APPLICATION_EMSG.equals(mimeType)
-        || APPLICATION_SCTE35.equals(mimeType)) {
+        || APPLICATION_SCTE35.equals(mimeType)
+        || APPLICATION_ICY.equals(mimeType)
+        || APPLICATION_AIT.equals(mimeType)) {
       return C.TRACK_TYPE_METADATA;
     } else if (APPLICATION_CAMERA_MOTION.equals(mimeType)) {
       return C.TRACK_TYPE_CAMERA_MOTION;
@@ -676,14 +716,17 @@ public final class MimeTypes {
     }
     mimeType = Ascii.toLowerCase(mimeType);
     switch (mimeType) {
-        // Normalize uncommon versions of some audio MIME types to their standard equivalent.
+      // Normalize uncommon versions of some video MIME types to their standard equivalent.
+      case BASE_TYPE_VIDEO + "/x-mvhevc":
+        return VIDEO_MV_HEVC;
+      // Normalize uncommon versions of some audio MIME types to their standard equivalent.
       case BASE_TYPE_AUDIO + "/x-flac":
         return AUDIO_FLAC;
       case BASE_TYPE_AUDIO + "/mp3":
         return AUDIO_MPEG;
       case BASE_TYPE_AUDIO + "/x-wav":
         return AUDIO_WAV;
-        // Normalize MIME types that are often written with upper-case letters to their common form.
+      // Normalize MIME types that are often written with upper-case letters to their common form.
       case "application/x-mpegurl":
         return APPLICATION_M3U8;
       case "audio/mpeg-l1":

@@ -317,7 +317,8 @@ public final class MediaMetadataCompat implements Parcelable {
     METADATA_KEY_ALBUM_ARTIST,
     METADATA_KEY_WRITER,
     METADATA_KEY_AUTHOR,
-    METADATA_KEY_COMPOSER
+    METADATA_KEY_COMPOSER,
+    METADATA_KEY_DISPLAY_SUBTITLE
   };
 
   private static final @BitmapKey String[] PREFERRED_BITMAP_ORDER = {
@@ -404,7 +405,7 @@ public final class MediaMetadataCompat implements Parcelable {
       // RatingCompat.
       rating = RatingCompat.fromRating(mBundle.getParcelable(key));
     } catch (Exception e) {
-      // ignore, value was not a bitmap
+      // ignore, value was not a Rating
       Log.w(TAG, "Failed to retrieve a key as Rating.", e);
     }
     return rating;

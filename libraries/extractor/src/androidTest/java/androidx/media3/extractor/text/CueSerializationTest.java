@@ -35,6 +35,7 @@ import androidx.media3.test.utils.TestUtil;
 import androidx.media3.test.utils.truth.SpannedSubject;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
+import androidx.test.filters.SdkSuppress;
 import com.google.common.collect.ImmutableList;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -72,7 +73,8 @@ public class CueSerializationTest {
 
     // encoding and decoding
     byte[] encodedCues = encoder.encode(ImmutableList.of(cue), /* durationUs= */ 2000);
-    CuesWithTiming cuesAfterDecoding = decoder.decode(/* startTimeUs= */ 1000, encodedCues);
+    CuesWithTiming cuesAfterDecoding =
+        decoder.decode(/* startTimeUs= */ 1000, encodedCues, /* offset= */ 0, encodedCues.length);
 
     assertThat(cuesAfterDecoding.startTimeUs).isEqualTo(1000);
     assertThat(cuesAfterDecoding.durationUs).isEqualTo(2000);
@@ -96,6 +98,7 @@ public class CueSerializationTest {
   }
 
   @Test
+  @SdkSuppress(minSdkVersion = 26)
   public void serializingBitmapCue() throws Exception {
     CueEncoder encoder = new CueEncoder();
     CueDecoder decoder = new CueDecoder();
@@ -115,7 +118,8 @@ public class CueSerializationTest {
 
     // encoding and decoding
     byte[] encodedCues = encoder.encode(ImmutableList.of(bitmapCue), /* durationUs= */ 2000);
-    CuesWithTiming cuesAfterDecoding = decoder.decode(/* startTimeUs= */ 1000, encodedCues);
+    CuesWithTiming cuesAfterDecoding =
+        decoder.decode(/* startTimeUs= */ 1000, encodedCues, /* offset= */ 0, encodedCues.length);
 
     assertThat(cuesAfterDecoding.startTimeUs).isEqualTo(1000);
     assertThat(cuesAfterDecoding.durationUs).isEqualTo(2000);
@@ -140,7 +144,8 @@ public class CueSerializationTest {
 
     // encoding and decoding
     byte[] encodedCues = encoder.encode(ImmutableList.of(mixedSpansCue), /* durationUs= */ 2000);
-    CuesWithTiming cuesAfterDecoding = decoder.decode(/* startTimeUs= */ 1000, encodedCues);
+    CuesWithTiming cuesAfterDecoding =
+        decoder.decode(/* startTimeUs= */ 1000, encodedCues, /* offset= */ 0, encodedCues.length);
 
     assertThat(cuesAfterDecoding.startTimeUs).isEqualTo(1000);
     assertThat(cuesAfterDecoding.durationUs).isEqualTo(2000);

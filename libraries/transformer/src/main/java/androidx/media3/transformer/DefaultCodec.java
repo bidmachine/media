@@ -34,7 +34,6 @@ import android.media.MediaCodec.BufferInfo;
 import android.media.MediaCrypto;
 import android.media.MediaFormat;
 import android.view.Surface;
-import androidx.annotation.DoNotInline;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
@@ -267,6 +266,16 @@ public final class DefaultCodec implements Codec {
     debugTraceLogEvent(EVENT_INPUT_ENDED, C.TIME_END_OF_SOURCE);
     try {
       mediaCodec.signalEndOfInputStream();
+    } catch (RuntimeException e) {
+      Log.d(TAG, "MediaCodec error", e);
+      throw createExportException(e);
+    }
+  }
+
+  @Override
+  public Format getInputFormat() throws ExportException {
+    try {
+      return convertToFormat(mediaCodec.getInputFormat(), isDecoder, configurationFormat.metadata);
     } catch (RuntimeException e) {
       Log.d(TAG, "MediaCodec error", e);
       throw createExportException(e);
@@ -524,7 +533,6 @@ public final class DefaultCodec implements Codec {
 
   @RequiresApi(29)
   private static final class Api29 {
-    @DoNotInline
     public static String getCanonicalName(MediaCodec mediaCodec) {
       return mediaCodec.getCanonicalName();
     }

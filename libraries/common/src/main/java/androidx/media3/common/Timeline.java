@@ -36,6 +36,7 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import com.google.errorprone.annotations.InlineMe;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import org.checkerframework.checker.nullness.qual.NonNull;
 
 /**
@@ -371,10 +372,10 @@ public abstract class Timeline {
         return false;
       }
       Window that = (Window) obj;
-      return Util.areEqual(uid, that.uid)
-          && Util.areEqual(mediaItem, that.mediaItem)
-          && Util.areEqual(manifest, that.manifest)
-          && Util.areEqual(liveConfiguration, that.liveConfiguration)
+      return Objects.equals(uid, that.uid)
+          && Objects.equals(mediaItem, that.mediaItem)
+          && Objects.equals(manifest, that.manifest)
+          && Objects.equals(liveConfiguration, that.liveConfiguration)
           && presentationStartTimeMs == that.presentationStartTimeMs
           && windowStartTimeMs == that.windowStartTimeMs
           && elapsedRealtimeEpochOffsetMs == that.elapsedRealtimeEpochOffsetMs
@@ -575,7 +576,8 @@ public abstract class Timeline {
      */
     public boolean isPlaceholder;
 
-    private AdPlaybackState adPlaybackState;
+    /** The {@link AdPlaybackState} for all ads in this period. */
+    @UnstableApi public AdPlaybackState adPlaybackState;
 
     /** Creates a new instance with no ad playback state. */
     public Period() {
@@ -870,13 +872,13 @@ public abstract class Timeline {
         return false;
       }
       Period that = (Period) obj;
-      return Util.areEqual(id, that.id)
-          && Util.areEqual(uid, that.uid)
+      return Objects.equals(id, that.id)
+          && Objects.equals(uid, that.uid)
           && windowIndex == that.windowIndex
           && durationUs == that.durationUs
           && positionInWindowUs == that.positionInWindowUs
           && isPlaceholder == that.isPlaceholder
-          && Util.areEqual(adPlaybackState, that.adPlaybackState);
+          && Objects.equals(adPlaybackState, that.adPlaybackState);
     }
 
     @Override

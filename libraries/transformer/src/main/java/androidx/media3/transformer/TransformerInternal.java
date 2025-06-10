@@ -21,6 +21,8 @@ import static androidx.media3.common.C.TRACK_TYPE_VIDEO;
 import static androidx.media3.common.util.Assertions.checkArgument;
 import static androidx.media3.common.util.Assertions.checkState;
 import static androidx.media3.common.util.Util.contains;
+import static androidx.media3.effect.DebugTraceUtil.COMPONENT_TRANSFORMER_INTERNAL;
+import static androidx.media3.effect.DebugTraceUtil.EVENT_START;
 import static androidx.media3.transformer.AssetLoader.SUPPORTED_OUTPUT_TYPE_DECODED;
 import static androidx.media3.transformer.AssetLoader.SUPPORTED_OUTPUT_TYPE_ENCODED;
 import static androidx.media3.transformer.Composition.HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_MEDIACODEC;
@@ -30,7 +32,6 @@ import static androidx.media3.transformer.MuxerWrapper.MUXER_RELEASE_REASON_CANC
 import static androidx.media3.transformer.MuxerWrapper.MUXER_RELEASE_REASON_COMPLETED;
 import static androidx.media3.transformer.MuxerWrapper.MUXER_RELEASE_REASON_ERROR;
 import static androidx.media3.transformer.Transformer.PROGRESS_STATE_AVAILABLE;
-import static androidx.media3.transformer.Transformer.PROGRESS_STATE_NOT_STARTED;
 import static androidx.media3.transformer.TransformerUtil.getDecoderOutputColor;
 import static androidx.media3.transformer.TransformerUtil.getProcessedTrackType;
 import static androidx.media3.transformer.TransformerUtil.getValidColor;
@@ -62,7 +63,8 @@ import androidx.media3.common.util.Clock;
 import androidx.media3.common.util.ConditionVariable;
 import androidx.media3.common.util.HandlerWrapper;
 import androidx.media3.common.util.Util;
-import androidx.media3.muxer.Muxer.MuxerException;
+import androidx.media3.effect.DebugTraceUtil;
+import androidx.media3.muxer.MuxerException;
 import androidx.media3.transformer.AssetLoader.CompositionSettings;
 import com.google.common.collect.ImmutableList;
 import java.lang.annotation.Documented;
@@ -145,6 +147,8 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   private final Object setMaxSequenceDurationUsLock;
   private final Object progressLock;
   private final ProgressHolder internalProgressHolder;
+  private final boolean portraitEncodingEnabled;
+  private final int maxFramesInEncoder;
 
   private boolean isDrainingExporters;
 
@@ -189,6 +193,8 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       AudioMixer.Factory audioMixerFactory,
       VideoFrameProcessor.Factory videoFrameProcessorFactory,
       Codec.EncoderFactory encoderFactory,
+      boolean portraitEncodingEnabled,
+      int maxFramesInEncoder,
       MuxerWrapper muxerWrapper,
       Listener listener,
       FallbackListener fallbackListener,
@@ -199,6 +205,8 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     this.context = context;
     this.composition = composition;
     this.encoderFactory = new CapturingEncoderFactory(encoderFactory);
+    this.portraitEncodingEnabled = portraitEncodingEnabled;
+    this.maxFramesInEncoder = maxFramesInEncoder;
     this.listener = listener;
     this.applicationHandler = applicationHandler;
     this.clock = clock;
@@ -272,13 +280,15 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       progressState = Transformer.PROGRESS_STATE_WAITING_FOR_AVAILABILITY;
       progressValue = 0;
     }
+    DebugTraceUtil.logEvent(
+        COMPONENT_TRANSFORMER_INTERNAL,
+        EVENT_START,
+        /* presentationTimeUs= */ C.TIME_UNSET,
+        /* extraFormat= */ "%s",
+        /* extraArgs...= */ Util.DEVICE_DEBUG_INFO);
   }
 
   public @Transformer.ProgressState int getProgress(ProgressHolder progressHolder) {
-    if (released) {
-      return PROGRESS_STATE_NOT_STARTED;
-    }
-
     synchronized (progressLock) {
       if (progressState == PROGRESS_STATE_AVAILABLE) {
         progressHolder.progress = progressValue;
@@ -394,10 +404,6 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     boolean releasedPreviously = released;
     if (!released) {
       released = true;
-      synchronized (progressLock) {
-        progressState = PROGRESS_STATE_NOT_STARTED;
-        progressValue = 0;
-      }
 
       Log.i(
           TAG,
@@ -523,7 +529,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       int assetLoaderProgressState =
           sequenceAssetLoaders.get(i).getProgress(internalProgressHolder);
       if (assetLoaderProgressState != PROGRESS_STATE_AVAILABLE) {
-        // TODO - b/322136131 : Check for inconsistent state transitions.
+        // TODO: b/322136131 - Check for inconsistent state transitions.
         synchronized (progressLock) {
           progressState = assetLoaderProgressState;
           progressValue = 0;
@@ -593,6 +599,11 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
         @AssetLoader.SupportedOutputTypes int supportedOutputTypes) {
       @C.TrackType
       int trackType = getProcessedTrackType(firstAssetLoaderInputFormat.sampleMimeType);
+
+      checkArgument(
+          trackType != TRACK_TYPE_VIDEO || !composition.sequences.get(sequenceIndex).hasGaps(),
+          "Gaps in video sequences are not supported.");
+
       synchronized (assetLoaderLock) {
         assetLoaderInputTracker.registerTrack(sequenceIndex, firstAssetLoaderInputFormat);
         if (assetLoaderInputTracker.hasRegisteredAllTracks()) {
@@ -693,7 +704,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       } else {
         Format firstFormat;
         if (MimeTypes.isVideo(assetLoaderOutputFormat.sampleMimeType)) {
-          // TODO(b/267301878): Pass firstAssetLoaderOutputFormat once surface creation not in VSP.
+          // TODO: b/267301878 - Pass firstAssetLoaderOutputFormat once surface creation not in VSP.
           boolean isMediaCodecToneMappingRequested =
               transformationRequest.hdrMode == HDR_MODE_TONE_MAP_HDR_TO_SDR_USING_MEDIACODEC;
           ColorInfo decoderOutputColor =
@@ -729,14 +740,18 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
                 fallbackListener,
                 debugViewProvider,
                 videoSampleTimestampOffsetUs,
-                /* hasMultipleInputs= */ assetLoaderInputTracker
-                    .hasMultipleConcurrentVideoTracks()));
+                /* hasMultipleInputs= */ assetLoaderInputTracker.hasMultipleConcurrentVideoTracks(),
+                portraitEncodingEnabled,
+                maxFramesInEncoder));
       }
     }
 
     @GuardedBy("assetLoaderLock")
     private void createEncodedSampleExporter(@C.TrackType int trackType) {
       checkState(assetLoaderInputTracker.getSampleExporter(trackType) == null);
+      checkArgument(
+          trackType != TRACK_TYPE_AUDIO || !composition.sequences.get(sequenceIndex).hasGaps(),
+          "Gaps can not be transmuxed.");
       assetLoaderInputTracker.registerSampleExporter(
           trackType,
           new EncodedSampleExporter(

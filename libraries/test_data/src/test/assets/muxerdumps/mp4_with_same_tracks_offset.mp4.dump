@@ -9,15 +9,18 @@ numberOfTracks = 2
 track 0:
   total output bytes = 112
   sample count = 2
+  track duration = 100
   format 0:
+    averageBitrate = 8960000
     id = 1
+    containerMimeType = video/mp4
     sampleMimeType = video/avc
     codecs = avc1.F4000A
     maxInputSize = 86
     maxNumReorderSamples = 2
     width = 12
     height = 10
-    frameRate = 20000.0
+    frameRate = 20000.00
     colorInfo:
       colorRange = 1
       lumaBitdepth = 8
@@ -37,15 +40,18 @@ track 0:
 track 1:
   total output bytes = 112
   sample count = 2
+  track duration = 200
   format 0:
+    averageBitrate = 4480000
     id = 2
+    containerMimeType = video/mp4
     sampleMimeType = video/avc
     codecs = avc1.F4000A
     maxInputSize = 86
     maxNumReorderSamples = 2
     width = 12
     height = 10
-    frameRate = 10000.0
+    frameRate = 10000.00
     colorInfo:
       colorRange = 1
       lumaBitdepth = 8

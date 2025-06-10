@@ -308,13 +308,9 @@ public final class DelegatingSubtitleDecoderTtmlParserTest {
 
     cue = getOnlyCueAtTimeUs(subtitle, 9_000_000);
     assertThat(cue.text.toString()).isEqualTo("dolor");
-    assertThat(cue.position).isEqualTo(Cue.DIMEN_UNSET);
-    assertThat(cue.line).isEqualTo(Cue.DIMEN_UNSET);
-    assertThat(cue.size).isEqualTo(Cue.DIMEN_UNSET);
-    // TODO: Should be as below, once https://github.com/google/ExoPlayer/issues/2953 is fixed.
-    // assertEquals(10f / 100f, cue.position);
-    // assertEquals(80f / 100f, cue.line);
-    // assertEquals(1f, cue.size);
+    assertThat(cue.position).isEqualTo(10f / 100f);
+    assertThat(cue.line).isEqualTo(80f / 100f);
+    assertThat(cue.size).isEqualTo(1f);
 
     cue = getOnlyCueAtTimeUs(subtitle, 21_000_000);
     assertThat(cue.text.toString()).isEqualTo("They first said this");
@@ -505,8 +501,8 @@ public final class DelegatingSubtitleDecoderTtmlParserTest {
     Cue cue = getOnlyCueAtTimeUs(subtitle, 1_000_000);
     assertThat(cue.text).isNull();
     assertThat(cue.bitmap).isNotNull();
-    assertThat(cue.position).isEqualTo(24f / 100f);
-    assertThat(cue.line).isEqualTo(28f / 100f);
+    assertThat(cue.position).isEqualTo(-24.2f / 100f);
+    assertThat(cue.line).isEqualTo(28.5f / 100f);
     assertThat(cue.size).isEqualTo(51f / 100f);
     assertThat(cue.bitmapHeight).isEqualTo(12f / 100f);
 
@@ -521,8 +517,8 @@ public final class DelegatingSubtitleDecoderTtmlParserTest {
     cue = getOnlyCueAtTimeUs(subtitle, 7_500_000);
     assertThat(cue.text).isNull();
     assertThat(cue.bitmap).isNotNull();
-    assertThat(cue.position).isEqualTo(24f / 100f);
-    assertThat(cue.line).isEqualTo(28f / 100f);
+    assertThat(cue.position).isEqualTo(-24.2f / 100f);
+    assertThat(cue.line).isEqualTo(28.5f / 100f);
     assertThat(cue.size).isEqualTo(51f / 100f);
     assertThat(cue.bitmapHeight).isEqualTo(12f / 100f);
   }
@@ -534,7 +530,7 @@ public final class DelegatingSubtitleDecoderTtmlParserTest {
     Cue cue = getOnlyCueAtTimeUs(subtitle, 1_000_000);
     assertThat(cue.text).isNull();
     assertThat(cue.bitmap).isNotNull();
-    assertThat(cue.position).isEqualTo(307f / 1280f);
+    assertThat(cue.position).isEqualTo(-307f / 1280f);
     assertThat(cue.line).isEqualTo(562f / 720f);
     assertThat(cue.size).isEqualTo(653f / 1280f);
     assertThat(cue.bitmapHeight).isEqualTo(86f / 720f);

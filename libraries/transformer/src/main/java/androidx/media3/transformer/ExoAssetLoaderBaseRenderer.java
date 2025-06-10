@@ -42,7 +42,6 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 /* package */ abstract class ExoAssetLoaderBaseRenderer extends BaseRenderer {
 
   protected long streamStartPositionUs;
-  protected long streamOffsetUs;
   protected @MonotonicNonNull SampleConsumer sampleConsumer;
   protected @MonotonicNonNull Codec decoder;
   protected boolean isEnded;
@@ -131,7 +130,6 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
       long offsetUs,
       MediaSource.MediaPeriodId mediaPeriodId) {
     this.streamStartPositionUs = startPositionUs;
-    this.streamOffsetUs = offsetUs;
   }
 
   @Override
@@ -227,8 +225,8 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 
     if (shouldInitDecoder) {
       if (getProcessedTrackType(inputFormat.sampleMimeType) == C.TRACK_TYPE_VIDEO) {
-        // TODO(b/278259383): Move surface creation out of video sampleConsumer. Init decoder and
-        // get decoder output Format before init sampleConsumer.
+        // TODO: b/278259383 - Move surface creation out of video sampleConsumer. Init decoder and
+        //  get decoder output Format before init sampleConsumer.
         if (!ensureSampleConsumerInitialized()) {
           return false;
         }
@@ -265,8 +263,8 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
         }
         outputFormat = overrideOutputFormat(decoderOutputFormat);
       } else {
-        // TODO(b/278259383): Move surface creation out of video sampleConsumer. Init decoder and
-        // get decoderOutput Format before init sampleConsumer.
+        // TODO: b/278259383 - Move surface creation out of video sampleConsumer. Init decoder and
+        //  get decoderOutput Format before init sampleConsumer.
         outputFormat = overrideOutputFormat(inputFormat);
       }
     }

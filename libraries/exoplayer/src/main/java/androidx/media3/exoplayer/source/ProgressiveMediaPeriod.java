@@ -54,10 +54,12 @@ import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo;
 import androidx.media3.exoplayer.upstream.Loader;
 import androidx.media3.exoplayer.upstream.Loader.LoadErrorAction;
 import androidx.media3.exoplayer.upstream.Loader.Loadable;
+import androidx.media3.exoplayer.util.ReleasableExecutor;
 import androidx.media3.extractor.DiscardingTrackOutput;
 import androidx.media3.extractor.Extractor;
 import androidx.media3.extractor.ExtractorOutput;
 import androidx.media3.extractor.ForwardingSeekMap;
+import androidx.media3.extractor.IndexSeekMap;
 import androidx.media3.extractor.PositionHolder;
 import androidx.media3.extractor.SeekMap;
 import androidx.media3.extractor.SeekMap.SeekPoints;
@@ -85,14 +87,14 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   interface Listener {
 
     /**
-     * Called when the duration, the ability to seek within the period, or the categorization as
-     * live stream changes.
+     * Called when the duration, the {@link SeekMap} of the period, or the categorization as live
+     * stream changes.
      *
      * @param durationUs The duration of the period, or {@link C#TIME_UNSET}.
-     * @param isSeekable Whether the period is seekable.
+     * @param seekMap The {@link SeekMap}.
      * @param isLive Whether the period is live.
      */
-    void onSourceInfoRefreshed(long durationUs, boolean isSeekable, boolean isLive);
+    void onSourceInfoRefreshed(long durationUs, SeekMap seekMap, boolean isLive);
   }
 
   private static final String TAG = "ProgressiveMediaPeriod";
@@ -118,6 +120,8 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   private final Allocator allocator;
   @Nullable private final String customCacheKey;
   private final long continueLoadingCheckIntervalBytes;
+  private final int singleTrackId;
+  @Nullable private final Format singleTrackFormat;
   private final long singleSampleDurationUs;
   private final Loader loader;
   private final ProgressiveMediaExtractor progressiveMediaExtractor;
@@ -143,6 +147,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
   private boolean seenFirstTrackSelection;
   private boolean notifyDiscontinuity;
+  private boolean pendingInitialDiscontinuity;
   private int enabledTrackCount;
   private boolean isLengthKnown;
 
@@ -170,7 +175,13 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
    *     indexing. May be null.
    * @param continueLoadingCheckIntervalBytes The number of bytes that should be loaded between each
    *     invocation of {@link Callback#onContinueLoadingRequested(SequenceableLoader)}.
+   * @param singleTrackId The ID of the track configured by {@code singleTrackFormat}. Ignored if
+   *     {@code singleTrackFormat} is null.
+   * @param singleTrackFormat The format of the single track this period is known to emit, allowing
+   *     preparation to complete without reading any data. Otherwise null.
    * @param singleSampleDurationUs The duration of media with a single sample in microseconds.
+   * @param downloadExecutor An optional externally provided {@link ReleasableExecutor} for loading
+   *     and extracting media.
    */
   // maybeFinishPrepare is not posted to the handler until initialization completes.
   @SuppressWarnings({"nullness:argument", "nullness:methodref.receiver.bound"})
@@ -186,7 +197,10 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       Allocator allocator,
       @Nullable String customCacheKey,
       int continueLoadingCheckIntervalBytes,
-      long singleSampleDurationUs) {
+      int singleTrackId,
+      @Nullable Format singleTrackFormat,
+      long singleSampleDurationUs,
+      @Nullable ReleasableExecutor downloadExecutor) {
     this.uri = uri;
     this.dataSource = dataSource;
     this.drmSessionManager = drmSessionManager;
@@ -197,7 +211,12 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     this.allocator = allocator;
     this.customCacheKey = customCacheKey;
     this.continueLoadingCheckIntervalBytes = continueLoadingCheckIntervalBytes;
-    loader = new Loader("ProgressiveMediaPeriod");
+    this.singleTrackId = singleTrackId;
+    this.singleTrackFormat = singleTrackFormat;
+    loader =
+        downloadExecutor != null
+            ? new Loader(downloadExecutor)
+            : new Loader("ProgressiveMediaPeriod");
     this.progressiveMediaExtractor = progressiveMediaExtractor;
     this.singleSampleDurationUs = singleSampleDurationUs;
     loadCondition = new ConditionVariable();
@@ -240,8 +259,23 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   @Override
   public void prepare(Callback callback, long positionUs) {
     this.callback = callback;
-    loadCondition.open();
-    startLoading();
+    if (singleTrackFormat != null) {
+      // track() and endTracks() are meant to be called on the loading thread, which doesn't exist
+      // yet (we're on the playback thread here). Starting the loading thread will provide a memory
+      // barrier to ensure any changes done here are visible on the loading thread after it starts.
+      TrackOutput track = track(singleTrackId, C.TRACK_TYPE_TEXT);
+      track.format(singleTrackFormat);
+      setSeekMap(
+          new IndexSeekMap(
+              /* positions= */ new long[] {0},
+              /* timesUs= */ new long[] {0},
+              /* durationUs= */ C.TIME_UNSET));
+      endTracks();
+      pendingResetPositionUs = positionUs;
+    } else {
+      loadCondition.open();
+      startLoading();
+    }
   }
 
   @Override
@@ -295,6 +329,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
         Assertions.checkState(!trackEnabledStates[track]);
         enabledTrackCount++;
         trackEnabledStates[track] = true;
+        pendingInitialDiscontinuity |= selection.getSelectedFormat().hasPrerollSamples;
         streams[i] = new SampleStreamImpl(track);
         streamResetFlags[i] = true;
         // If there's still a chance of avoiding a seek, try and seek within the sample queue.
@@ -312,6 +347,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     if (enabledTrackCount == 0) {
       pendingDeferredRetry = false;
       notifyDiscontinuity = false;
+      pendingInitialDiscontinuity = false;
       if (loader.isLoading()) {
         // Discard as much as we can synchronously.
         for (SampleQueue sampleQueue : sampleQueues) {
@@ -364,7 +400,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     if (loadingFinished
         || loader.hasFatalError()
         || pendingDeferredRetry
-        || (prepared && enabledTrackCount == 0)) {
+        || ((prepared || singleTrackFormat != null) && enabledTrackCount == 0)) {
       return false;
     }
     boolean continuedLoading = loadCondition.open();
@@ -387,6 +423,11 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
   @Override
   public long readDiscontinuity() {
+    if (pendingInitialDiscontinuity) {
+      pendingInitialDiscontinuity = false;
+      return lastSeekPositionUs;
+    }
+
     if (notifyDiscontinuity
         && (loadingFinished || getExtractedSamplesCount() > extractedSamplesCountAtStartOfLoad)) {
       notifyDiscontinuity = false;
@@ -432,6 +473,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     positionUs = seekMap.isSeekable() ? positionUs : 0;
 
     notifyDiscontinuity = false;
+    boolean isSameAsLastSeekPosition = lastSeekPositionUs == positionUs;
     lastSeekPositionUs = positionUs;
     if (isPendingReset()) {
       // A reset is already pending. We only need to update its position.
@@ -443,7 +485,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     // and seek within the existing buffer instead of restarting the load.
     if (dataType != C.DATA_TYPE_MEDIA_PROGRESSIVE_LIVE
         && (loadingFinished || loader.isLoading())
-        && seekInsideBufferUs(trackIsAudioVideoFlags, positionUs)) {
+        && seekInsideBufferUs(trackIsAudioVideoFlags, positionUs, isSameAsLastSeekPosition)) {
       return positionUs;
     }
 
@@ -451,6 +493,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     pendingDeferredRetry = false;
     pendingResetPositionUs = positionUs;
     loadingFinished = false;
+    pendingInitialDiscontinuity = false;
     if (loader.isLoading()) {
       // Discard as much as we can synchronously.
       for (SampleQueue sampleQueue : sampleQueues) {
@@ -541,9 +584,8 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
   private void maybeStartDeferredRetry(int track) {
     assertPrepared();
-    boolean[] trackIsAudioVideoFlags = trackState.trackIsAudioVideoFlags;
     if (!pendingDeferredRetry
-        || !trackIsAudioVideoFlags[track]
+        || (haveAudioVideoTracks && !trackState.trackIsAudioVideoFlags[track])
         || sampleQueues[track].isReady(/* loadingFinished= */ false)) {
       return;
     }
@@ -565,17 +607,43 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   // Loader.Callback implementation.
 
   @Override
+  public void onLoadStarted(
+      ExtractingLoadable loadable, long elapsedRealtimeMs, long loadDurationMs, int retryCount) {
+    StatsDataSource dataSource = loadable.dataSource;
+    LoadEventInfo loadEventInfo =
+        retryCount == 0
+            ? new LoadEventInfo(loadable.loadTaskId, loadable.dataSpec, elapsedRealtimeMs)
+            : new LoadEventInfo(
+                loadable.loadTaskId,
+                loadable.dataSpec,
+                dataSource.getLastOpenedUri(),
+                dataSource.getLastResponseHeaders(),
+                elapsedRealtimeMs,
+                loadDurationMs,
+                dataSource.getBytesRead());
+    mediaSourceEventDispatcher.loadStarted(
+        loadEventInfo,
+        C.DATA_TYPE_MEDIA,
+        C.TRACK_TYPE_UNKNOWN,
+        /* trackFormat= */ null,
+        C.SELECTION_REASON_UNKNOWN,
+        /* trackSelectionData= */ null,
+        /* mediaStartTimeUs= */ loadable.seekTimeUs,
+        durationUs,
+        retryCount);
+  }
+
+  @Override
   public void onLoadCompleted(
       ExtractingLoadable loadable, long elapsedRealtimeMs, long loadDurationMs) {
     if (durationUs == C.TIME_UNSET && seekMap != null) {
-      boolean isSeekable = seekMap.isSeekable();
       long largestQueuedTimestampUs =
           getLargestQueuedTimestampUs(/* includeDisabledTracks= */ true);
       durationUs =
           largestQueuedTimestampUs == Long.MIN_VALUE
               ? 0
               : largestQueuedTimestampUs + DEFAULT_LAST_SAMPLE_DURATION_US;
-      listener.onSourceInfoRefreshed(durationUs, isSeekable, isLive);
+      listener.onSourceInfoRefreshed(durationUs, seekMap, isLive);
     }
     StatsDataSource dataSource = loadable.dataSource;
     LoadEventInfo loadEventInfo =
@@ -760,7 +828,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     isLive = !isLengthKnown && seekMap.getDurationUs() == C.TIME_UNSET;
     dataType = isLive ? C.DATA_TYPE_MEDIA_PROGRESSIVE_LIVE : C.DATA_TYPE_MEDIA;
     if (prepared) {
-      listener.onSourceInfoRefreshed(durationUs, seekMap.isSeekable(), isLive);
+      listener.onSourceInfoRefreshed(durationUs, seekMap, isLive);
     } else {
       maybeFinishPrepare();
     }
@@ -810,6 +878,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       }
       trackFormat = trackFormat.copyWithCryptoType(drmSessionManager.getCryptoType(trackFormat));
       trackArray[i] = new TrackGroup(/* id= */ Integer.toString(i), trackFormat);
+      pendingInitialDiscontinuity |= trackFormat.hasPrerollSamples;
     }
     trackState = new TrackState(new TrackGroupArray(trackArray), trackIsAudioVideoFlags);
     if (isSingleSample && durationUs == C.TIME_UNSET) {
@@ -822,7 +891,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
             }
           };
     }
-    listener.onSourceInfoRefreshed(durationUs, seekMap.isSeekable(), isLive);
+    listener.onSourceInfoRefreshed(durationUs, seekMap, isLive);
     prepared = true;
     checkNotNull(callback).onPrepared(this);
   }
@@ -847,19 +916,8 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       pendingResetPositionUs = C.TIME_UNSET;
     }
     extractedSamplesCountAtStartOfLoad = getExtractedSamplesCount();
-    long elapsedRealtimeMs =
-        loader.startLoading(
-            loadable, this, loadErrorHandlingPolicy.getMinimumLoadableRetryCount(dataType));
-    DataSpec dataSpec = loadable.dataSpec;
-    mediaSourceEventDispatcher.loadStarted(
-        new LoadEventInfo(loadable.loadTaskId, dataSpec, elapsedRealtimeMs),
-        C.DATA_TYPE_MEDIA,
-        C.TRACK_TYPE_UNKNOWN,
-        /* trackFormat= */ null,
-        C.SELECTION_REASON_UNKNOWN,
-        /* trackSelectionData= */ null,
-        /* mediaStartTimeUs= */ loadable.seekTimeUs,
-        durationUs);
+    loader.startLoading(
+        loadable, this, loadErrorHandlingPolicy.getMinimumLoadableRetryCount(dataType));
   }
 
   /**
@@ -910,12 +968,18 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
    *
    * @param trackIsAudioVideoFlags Whether each track is audio/video.
    * @param positionUs The seek position in microseconds.
+   * @param isSameAsLastSeekPosition Whether new seek position is same as that last called with
+   *     {@link #seekToUs}.
    * @return Whether the in-buffer seek was successful.
    */
-  private boolean seekInsideBufferUs(boolean[] trackIsAudioVideoFlags, long positionUs) {
+  private boolean seekInsideBufferUs(
+      boolean[] trackIsAudioVideoFlags, long positionUs, boolean isSameAsLastSeekPosition) {
     int trackCount = sampleQueues.length;
     for (int i = 0; i < trackCount; i++) {
       SampleQueue sampleQueue = sampleQueues[i];
+      if (sampleQueue.getReadIndex() == 0 && isSameAsLastSeekPosition) {
+        continue;
+      }
       boolean seekInsideQueue =
           isSingleSample
               ? sampleQueue.seekTo(sampleQueue.getFirstIndex())

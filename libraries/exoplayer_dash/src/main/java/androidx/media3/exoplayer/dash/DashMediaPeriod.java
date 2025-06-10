@@ -72,6 +72,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -114,6 +115,8 @@ import java.util.regex.Pattern;
   private DashManifest manifest;
   private int periodIndex;
   private List<EventStream> eventStreams;
+  private boolean canReportInitialDiscontinuity;
+  private long initialStartTimeUs;
 
   public DashMediaPeriod(
       int id,
@@ -149,6 +152,7 @@ import java.util.regex.Pattern;
     this.allocator = allocator;
     this.compositeSequenceableLoaderFactory = compositeSequenceableLoaderFactory;
     this.playerId = playerId;
+    this.canReportInitialDiscontinuity = true;
     playerEmsgHandler = new PlayerEmsgHandler(manifest, playerEmsgCallback, allocator);
     sampleStreams = newSampleStreamArray(0);
     eventSampleStreams = new EventSampleStream[0];
@@ -305,6 +309,10 @@ import java.util.regex.Pattern;
         compositeSequenceableLoaderFactory.create(
             sampleStreamList,
             Lists.transform(sampleStreamList, s -> ImmutableList.of(s.primaryTrackType)));
+    if (canReportInitialDiscontinuity) {
+      canReportInitialDiscontinuity = false;
+      initialStartTimeUs = positionUs;
+    }
     return positionUs;
   }
 
@@ -317,6 +325,12 @@ import java.util.regex.Pattern;
 
   @Override
   public void reevaluateBuffer(long positionUs) {
+    for (ChunkSampleStream<DashChunkSource> sampleStream : sampleStreams) {
+      if (!sampleStream.isLoading()) {
+        long periodDurationUs = manifest.getPeriodDurationUs(periodIndex);
+        sampleStream.discardUpstreamSamplesForClippedDuration(periodDurationUs);
+      }
+    }
     compositeSequenceableLoader.reevaluateBuffer(positionUs);
   }
 
@@ -337,6 +351,11 @@ import java.util.regex.Pattern;
 
   @Override
   public long readDiscontinuity() {
+    for (ChunkSampleStream<DashChunkSource> sampleStream : sampleStreams) {
+      if (sampleStream.consumeInitialDiscontinuity()) {
+        return initialStartTimeUs;
+      }
+    }
     return C.TIME_UNSET;
   }
 
@@ -606,7 +625,9 @@ import java.util.regex.Pattern;
             @Nullable
             Integer otherAdaptationSetIndex =
                 adaptationSetIdToIndex.get(Long.parseLong(adaptationSetId));
-            if (otherAdaptationSetIndex != null) {
+            if (otherAdaptationSetIndex != null
+                && canMergeAdaptationSets(
+                    adaptationSet, adaptationSets.get(otherAdaptationSetIndex))) {
               mergedGroupIndex = min(mergedGroupIndex, otherAdaptationSetIndex);
             }
           }
@@ -630,6 +651,20 @@ import java.util.regex.Pattern;
       Arrays.sort(groupedAdaptationSetIndices[i]);
     }
     return groupedAdaptationSetIndices;
+  }
+
+  private static boolean canMergeAdaptationSets(
+      AdaptationSet adaptationSet1, AdaptationSet adaptationSet2) {
+    if (adaptationSet1.type != adaptationSet2.type) {
+      return false;
+    }
+    if (adaptationSet1.representations.isEmpty() || adaptationSet2.representations.isEmpty()) {
+      return true;
+    }
+    Format format1 = adaptationSet1.representations.get(0).format;
+    Format format2 = adaptationSet2.representations.get(0).format;
+    return Objects.equals(format1.language, format2.language)
+        && format1.roleFlags == format2.roleFlags;
   }
 
   /**
@@ -824,7 +859,9 @@ import java.util.regex.Pattern;
             drmSessionManager,
             drmEventDispatcher,
             loadErrorHandlingPolicy,
-            mediaSourceEventDispatcher);
+            mediaSourceEventDispatcher,
+            canReportInitialDiscontinuity,
+            /* downloadExecutor= */ null);
     synchronized (this) {
       // The map is also accessed on the loading thread so synchronize access.
       trackEmsgHandlerBySampleStream.put(stream, trackPlayerEmsgHandler);

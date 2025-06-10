@@ -24,6 +24,7 @@ import static androidx.media3.effect.DebugTraceUtil.EVENT_QUEUE_BITMAP;
 import static androidx.media3.effect.DebugTraceUtil.EVENT_SIGNAL_EOS;
 
 import android.graphics.Bitmap;
+import androidx.annotation.Nullable;
 import androidx.media3.common.C;
 import androidx.media3.common.FrameInfo;
 import androidx.media3.common.GlObjectsProvider;
@@ -35,7 +36,6 @@ import androidx.media3.common.util.Util;
 import java.util.Queue;
 import java.util.concurrent.LinkedBlockingQueue;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
-import org.checkerframework.checker.nullness.qual.Nullable;
 
 /**
  * Forwards a video frame produced from a {@link Bitmap} to a {@link GlShaderProgram} for
@@ -169,8 +169,8 @@ import org.checkerframework.checker.nullness.qual.Nullable;
         EVENT_QUEUE_BITMAP,
         currentPresentationTimeUs,
         /* extraFormat= */ "%dx%d",
-        /* extraArgs...= */ currentFrameInfo.width,
-        currentFrameInfo.height);
+        /* extraArgs...= */ currentFrameInfo.format.width,
+        currentFrameInfo.format.height);
 
     if (!currentBitmapInfo.inStreamOffsetsUs.hasNext()) {
       isNextFrameInTexture = false;
@@ -216,8 +216,8 @@ import org.checkerframework.checker.nullness.qual.Nullable;
               currentTexId,
               /* fboId= */ C.INDEX_UNSET,
               /* rboId= */ C.INDEX_UNSET,
-              frameInfo.width,
-              frameInfo.height);
+              frameInfo.format.width,
+              frameInfo.format.height);
       if (Util.SDK_INT >= 34 && bitmap.hasGainmap()) {
         checkNotNull(repeatingGainmapShaderProgram).setGainmap(checkNotNull(bitmap.getGainmap()));
       }

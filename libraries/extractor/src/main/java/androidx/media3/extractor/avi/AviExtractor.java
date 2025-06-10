@@ -15,6 +15,7 @@
  */
 package androidx.media3.extractor.avi;
 
+import static java.lang.Math.max;
 import static java.lang.annotation.ElementType.TYPE_USE;
 
 import androidx.annotation.IntDef;
@@ -405,22 +406,24 @@ public final class AviExtractor implements Extractor {
       int chunkId = body.readLittleEndianInt();
       int flags = body.readLittleEndianInt();
       long offset = body.readLittleEndianInt() + seekOffset;
-      body.readLittleEndianInt(); // We ignore the size.
+      body.skipBytes(4); // Ignore size.
       ChunkReader chunkReader = getChunkReader(chunkId);
       if (chunkReader == null) {
         // We ignore unknown chunk IDs.
         continue;
       }
-      if ((flags & AVIIF_KEYFRAME) == AVIIF_KEYFRAME) {
-        chunkReader.appendKeyFrameToIndex(offset);
-      }
-      chunkReader.incrementIndexChunkCount();
+      chunkReader.appendIndexChunk(
+          offset, /* isKeyFrame= */ (flags & AVIIF_KEYFRAME) == AVIIF_KEYFRAME);
     }
     for (ChunkReader chunkReader : chunkReaders) {
-      chunkReader.compactIndex();
+      chunkReader.commitIndex();
     }
     seekMapHasBeenOutput = true;
-    extractorOutput.seekMap(new AviSeekMap(durationUs));
+    if (chunkReaders.length == 0) {
+      extractorOutput.seekMap(new SeekMap.Unseekable(durationUs));
+    } else {
+      extractorOutput.seekMap(new AviSeekMap(durationUs));
+    }
   }
 
   private long peekSeekOffset(ParsableByteArray idx1Body) {
@@ -436,7 +439,7 @@ public final class AviExtractor implements Extractor {
     idx1Body.skipBytes(8); // Skip chunkId (4 bytes) and flags (4 bytes).
     int offset = idx1Body.readLittleEndianInt();
 
-    // moviStart poitns at the start of the LIST, while the seek offset is based at the start of the
+    // moviStart points at the start of the LIST, while the seek offset is based at the start of the
     // movi fourCC, so we add 8 to reconcile the difference.
     long seekOffset = offset > moviStart ? 0L : moviStart + 8;
     idx1Body.setPosition(startingPosition);
@@ -520,11 +523,9 @@ public final class AviExtractor implements Extractor {
     if (trackType == C.TRACK_TYPE_AUDIO || trackType == C.TRACK_TYPE_VIDEO) {
       TrackOutput trackOutput = extractorOutput.track(streamId, trackType);
       trackOutput.format(builder.build());
-      ChunkReader chunkReader =
-          new ChunkReader(
-              streamId, trackType, durationUs, aviStreamHeaderChunk.length, trackOutput);
-      this.durationUs = durationUs;
-      return chunkReader;
+      trackOutput.durationUs(durationUs);
+      this.durationUs = max(this.durationUs, durationUs);
+      return new ChunkReader(streamId, aviStreamHeaderChunk, trackOutput);
     } else {
       // We don't currently support tracks other than video and audio.
       return null;

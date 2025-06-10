@@ -34,12 +34,12 @@ import android.graphics.PixelFormat;
 import android.media.Image;
 import android.opengl.GLES20;
 import android.opengl.GLES30;
+import android.os.Build;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.media3.common.util.GlUtil;
 import androidx.media3.common.util.Log;
 import androidx.media3.common.util.UnstableApi;
-import androidx.media3.common.util.Util;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -92,7 +92,7 @@ public class BitmapPixelTestUtil {
    */
   // TODO: b/279154364 - Stop allowing 15f threshold after bug is fixed.
   public static final float MAXIMUM_AVERAGE_PIXEL_ABSOLUTE_DIFFERENCE_DIFFERENT_DEVICE =
-      !Util.MODEL.equals("H8266") && !Util.MODEL.equals("H8416") ? 5f : 15f;
+      !Build.MODEL.equals("H8266") && !Build.MODEL.equals("H8416") ? 5f : 15f;
 
   /**
    * Maximum allowed average pixel difference between bitmaps generated.
@@ -205,6 +205,28 @@ public class BitmapPixelTestUtil {
         plane.getPixelStride());
   }
 
+  /**
+   * Copies image data from the specified {@link Bitmap} into the {@link Image}, which must be an
+   * {@linkplain PixelFormat#RGBA_8888} image.
+   */
+  public static void copyRbga8888BitmapToImage(Bitmap bitmap, Image image) {
+    assertThat(image.getPlanes()).hasLength(1);
+    assertThat(image.getFormat()).isEqualTo(PixelFormat.RGBA_8888);
+    Image.Plane imagePlane = image.getPlanes()[0];
+    ByteBuffer imageBuffer = imagePlane.getBuffer();
+    for (int y = 0; y < bitmap.getHeight(); y++) {
+      for (int x = 0; x < bitmap.getWidth(); x++) {
+        int imageBufferOffset = y * imagePlane.getRowStride() + x * imagePlane.getPixelStride();
+        int argbPixel = bitmap.getPixel(x, y);
+        imageBuffer.position(imageBufferOffset);
+        imageBuffer.put((byte) ((argbPixel >> 16) & 0xFF));
+        imageBuffer.put((byte) ((argbPixel >> 8) & 0xFF));
+        imageBuffer.put((byte) (argbPixel & 0xFF));
+        imageBuffer.put((byte) ((argbPixel >> 24) & 0xFF));
+      }
+    }
+  }
+
   public static Bitmap createArgb8888BitmapFromRgba8888ImageBuffer(ImageBuffer imageBuffer) {
     int[] colors = new int[imageBuffer.width * imageBuffer.height];
     for (int y = 0; y < imageBuffer.height; y++) {
@@ -305,15 +327,15 @@ public class BitmapPixelTestUtil {
         }
         int alphaDifference = abs(Color.alpha(actualColor) - Color.alpha(expectedColor));
         int redDifference = abs(Color.red(actualColor) - Color.red(expectedColor));
-        int blueDifference = abs(Color.blue(actualColor) - Color.blue(expectedColor));
         int greenDifference = abs(Color.green(actualColor) - Color.green(expectedColor));
-        differencesBitmap.setPixel(x, y, Color.rgb(redDifference, blueDifference, greenDifference));
+        int blueDifference = abs(Color.blue(actualColor) - Color.blue(expectedColor));
+        differencesBitmap.setPixel(x, y, Color.rgb(redDifference, greenDifference, blueDifference));
 
         int maximumAbsoluteDifference = 0;
         maximumAbsoluteDifference = max(maximumAbsoluteDifference, alphaDifference);
         maximumAbsoluteDifference = max(maximumAbsoluteDifference, redDifference);
-        maximumAbsoluteDifference = max(maximumAbsoluteDifference, blueDifference);
         maximumAbsoluteDifference = max(maximumAbsoluteDifference, greenDifference);
+        maximumAbsoluteDifference = max(maximumAbsoluteDifference, blueDifference);
 
         sumMaximumAbsoluteDifferences += maximumAbsoluteDifference;
       }

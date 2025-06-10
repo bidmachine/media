@@ -15,11 +15,12 @@
  */
 package androidx.media3.effect;
 
+import static androidx.media3.common.VideoFrameProcessor.RENDER_OUTPUT_FRAME_IMMEDIATELY;
+import static androidx.media3.common.VideoFrameProcessor.RENDER_OUTPUT_FRAME_WITH_PRESENTATION_TIME;
 import static androidx.media3.common.util.Assertions.checkNotNull;
 import static androidx.media3.common.util.Assertions.checkState;
 import static androidx.media3.effect.DebugTraceUtil.COMPONENT_VFP;
 import static androidx.media3.effect.DebugTraceUtil.EVENT_RENDERED_TO_OUTPUT_SURFACE;
-import static androidx.media3.effect.DefaultVideoFrameProcessor.WORKING_COLOR_SPACE_LINEAR;
 
 import android.content.Context;
 import android.opengl.EGL14;
@@ -27,16 +28,11 @@ import android.opengl.EGLContext;
 import android.opengl.EGLDisplay;
 import android.opengl.EGLExt;
 import android.opengl.EGLSurface;
-import android.opengl.GLES20;
 import android.util.Pair;
 import android.view.Surface;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
-import androidx.annotation.GuardedBy;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
 import androidx.media3.common.ColorInfo;
-import androidx.media3.common.DebugViewProvider;
 import androidx.media3.common.GlObjectsProvider;
 import androidx.media3.common.GlTextureInfo;
 import androidx.media3.common.SurfaceInfo;
@@ -46,11 +42,11 @@ import androidx.media3.common.util.GlUtil;
 import androidx.media3.common.util.Log;
 import androidx.media3.common.util.LongArrayQueue;
 import androidx.media3.common.util.Size;
-import androidx.media3.common.util.Util;
 import androidx.media3.effect.DefaultVideoFrameProcessor.WorkingColorSpace;
 import com.google.common.collect.ImmutableList;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executor;
@@ -78,13 +74,14 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   private static final String TAG = "FinalShaderWrapper";
   private static final int SURFACE_INPUT_CAPACITY = 1;
 
+  // All fields but videoFrameProcessingTaskExecutor should be accessed only on the GL thread.
+
   private final Context context;
   private final List<GlMatrixTransformation> matrixTransformations;
   private final List<RgbMatrix> rgbMatrices;
   private final EGLDisplay eglDisplay;
   private final EGLContext eglContext;
   private final EGLSurface placeholderSurface;
-  private final DebugViewProvider debugViewProvider;
   private final ColorInfo outputColorInfo;
   private final VideoFrameProcessingTaskExecutor videoFrameProcessingTaskExecutor;
   private final Executor videoFrameProcessorListenerExecutor;
@@ -99,10 +96,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
   private int inputWidth;
   private int inputHeight;
-  private int outputWidth;
-  private int outputHeight;
   @Nullable private DefaultShaderProgram defaultShaderProgram;
-  @Nullable private SurfaceViewWrapper debugSurfaceViewWrapper;
   // Whether the input stream has ended, but not all input has been released. This is relevant only
   // when renderFramesAutomatically is false. Ensures all frames are rendered before reporting
   // onInputStreamProcessed.
@@ -110,28 +104,19 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   private boolean isInputStreamEndedWithPendingAvailableFrames;
   private InputListener inputListener;
   private @MonotonicNonNull Size outputSizeBeforeSurfaceTransformation;
-  @Nullable private SurfaceView debugSurfaceView;
   @Nullable private OnInputStreamProcessedListener onInputStreamProcessedListener;
   private boolean matrixTransformationsChanged;
-
-  @GuardedBy("this")
   private boolean outputSurfaceInfoChanged;
-
-  @GuardedBy("this")
-  @Nullable
-  private SurfaceInfo outputSurfaceInfo;
+  @Nullable private SurfaceInfo outputSurfaceInfo;
 
   /** Wraps the {@link Surface} in {@link #outputSurfaceInfo}. */
-  @GuardedBy("this")
-  @Nullable
-  private EGLSurface outputEglSurface;
+  @Nullable private EGLSurface outputEglSurface;
 
   public FinalShaderProgramWrapper(
       Context context,
       EGLDisplay eglDisplay,
       EGLContext eglContext,
       EGLSurface placeholderSurface,
-      DebugViewProvider debugViewProvider,
       ColorInfo outputColorInfo,
       VideoFrameProcessingTaskExecutor videoFrameProcessingTaskExecutor,
       Executor videoFrameProcessorListenerExecutor,
@@ -146,7 +131,6 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     this.eglDisplay = eglDisplay;
     this.eglContext = eglContext;
     this.placeholderSurface = placeholderSurface;
-    this.debugViewProvider = debugViewProvider;
     this.outputColorInfo = outputColorInfo;
     this.videoFrameProcessingTaskExecutor = videoFrameProcessingTaskExecutor;
     this.videoFrameProcessorListenerExecutor = videoFrameProcessorListenerExecutor;
@@ -164,8 +148,29 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     syncObjects = new LongArrayQueue(textureOutputCapacity);
   }
 
+  // GlTextureProducer interface. Can be called on any thread.
+
+  @Override
+  public void releaseOutputTexture(long presentationTimeUs) {
+    videoFrameProcessingTaskExecutor.submit(() -> releaseOutputTextureInternal(presentationTimeUs));
+  }
+
+  private void releaseOutputTextureInternal(long presentationTimeUs) throws GlUtil.GlException {
+    checkState(textureOutputListener != null);
+    while (outputTexturePool.freeTextureCount() < outputTexturePool.capacity()
+        && outputTextureTimestamps.element() <= presentationTimeUs) {
+      outputTexturePool.freeTexture();
+      outputTextureTimestamps.remove();
+      GlUtil.deleteSyncObject(syncObjects.remove());
+      inputListener.onReadyToAcceptInputFrame();
+    }
+  }
+
+  // GlShaderProgram interface. Must be called on the GL thread.
+
   @Override
   public void setInputListener(InputListener inputListener) {
+    videoFrameProcessingTaskExecutor.verifyVideoFrameProcessingThread();
     this.inputListener = inputListener;
     for (int i = 0; i < getInputCapacity(); i++) {
       inputListener.onReadyToAcceptInputFrame();
@@ -186,11 +191,13 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
   public void setOnInputStreamProcessedListener(
       @Nullable OnInputStreamProcessedListener onInputStreamProcessedListener) {
+    videoFrameProcessingTaskExecutor.verifyVideoFrameProcessingThread();
     this.onInputStreamProcessedListener = onInputStreamProcessedListener;
   }
 
   @Override
   public void signalEndOfCurrentInputStream() {
+    videoFrameProcessingTaskExecutor.verifyVideoFrameProcessingThread();
     if (availableFrames.isEmpty()) {
       checkNotNull(onInputStreamProcessedListener).onInputStreamProcessed();
       isInputStreamEndedWithPendingAvailableFrames = false;
@@ -200,11 +207,10 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     }
   }
 
-  // Methods that must be called on the GL thread.
-
   @Override
   public void queueInputFrame(
       GlObjectsProvider glObjectsProvider, GlTextureInfo inputTexture, long presentationTimeUs) {
+    videoFrameProcessingTaskExecutor.verifyVideoFrameProcessingThread();
     videoFrameProcessorListenerExecutor.execute(
         () -> videoFrameProcessorListener.onOutputFrameAvailableForRendering(presentationTimeUs));
     if (textureOutputListener == null) {
@@ -235,39 +241,8 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   }
 
   @Override
-  public void releaseOutputTexture(long presentationTimeUs) {
-    videoFrameProcessingTaskExecutor.submit(() -> releaseOutputTextureInternal(presentationTimeUs));
-  }
-
-  private void releaseOutputTextureInternal(long presentationTimeUs) throws GlUtil.GlException {
-    checkState(textureOutputListener != null);
-    while (outputTexturePool.freeTextureCount() < outputTexturePool.capacity()
-        && outputTextureTimestamps.element() <= presentationTimeUs) {
-      outputTexturePool.freeTexture();
-      outputTextureTimestamps.remove();
-      GlUtil.deleteSyncObject(syncObjects.remove());
-      inputListener.onReadyToAcceptInputFrame();
-    }
-  }
-
-  /**
-   * Sets the list of {@link GlMatrixTransformation GlMatrixTransformations} and list of {@link
-   * RgbMatrix RgbMatrices} to apply to the next {@linkplain #queueInputFrame queued} frame.
-   *
-   * <p>The new transformations will be applied to the next {@linkplain #queueInputFrame queued}
-   * frame.
-   */
-  public void setMatrixTransformations(
-      List<GlMatrixTransformation> matrixTransformations, List<RgbMatrix> rgbMatrices) {
-    this.matrixTransformations.clear();
-    this.matrixTransformations.addAll(matrixTransformations);
-    this.rgbMatrices.clear();
-    this.rgbMatrices.addAll(rgbMatrices);
-    matrixTransformationsChanged = true;
-  }
-
-  @Override
   public void flush() {
+    videoFrameProcessingTaskExecutor.verifyVideoFrameProcessingThread();
     // The downstream consumer must already have been flushed, so the textureOutputListener
     // implementation does not access its previously output textures, per its contract. However, the
     // downstream consumer may not have called releaseOutputTexture on all these textures. Release
@@ -292,14 +267,9 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     }
   }
 
-  private int getInputCapacity() {
-    return textureOutputListener == null
-        ? SURFACE_INPUT_CAPACITY
-        : outputTexturePool.freeTextureCount();
-  }
-
   @Override
-  public synchronized void release() throws VideoFrameProcessingException {
+  public void release() throws VideoFrameProcessingException {
+    videoFrameProcessingTaskExecutor.verifyVideoFrameProcessingThread();
     if (defaultShaderProgram != null) {
       defaultShaderProgram.release();
     }
@@ -312,7 +282,27 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     }
   }
 
+  /**
+   * Sets the list of {@link GlMatrixTransformation GlMatrixTransformations} and list of {@link
+   * RgbMatrix RgbMatrices} to apply to the next {@linkplain #queueInputFrame queued} frame.
+   *
+   * <p>The new transformations will be applied to the next {@linkplain #queueInputFrame queued}
+   * frame.
+   *
+   * <p>Must be called on the GL thread.
+   */
+  public void setMatrixTransformations(
+      List<GlMatrixTransformation> matrixTransformations, List<RgbMatrix> rgbMatrices) {
+    videoFrameProcessingTaskExecutor.verifyVideoFrameProcessingThread();
+    this.matrixTransformations.clear();
+    this.matrixTransformations.addAll(matrixTransformations);
+    this.rgbMatrices.clear();
+    this.rgbMatrices.addAll(rgbMatrices);
+    matrixTransformationsChanged = true;
+  }
+
   public void renderOutputFrame(GlObjectsProvider glObjectsProvider, long renderTimeNs) {
+    videoFrameProcessingTaskExecutor.verifyVideoFrameProcessingThread();
     if (textureOutputListener != null) {
       return;
     }
@@ -329,7 +319,11 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     }
   }
 
-  /** See {@link DefaultVideoFrameProcessor#setOutputSurfaceInfo} */
+  /**
+   * See {@link DefaultVideoFrameProcessor#setOutputSurfaceInfo}
+   *
+   * <p>Can be called on any thread.
+   */
   public void setOutputSurfaceInfo(@Nullable SurfaceInfo outputSurfaceInfo) {
     try {
       videoFrameProcessingTaskExecutor.invoke(
@@ -342,11 +336,11 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
   }
 
   /** Must be called on the GL thread. */
-  private synchronized void setOutputSurfaceInfoInternal(@Nullable SurfaceInfo outputSurfaceInfo) {
+  private void setOutputSurfaceInfoInternal(@Nullable SurfaceInfo outputSurfaceInfo) {
     if (textureOutputListener != null) {
       return;
     }
-    if (Util.areEqual(this.outputSurfaceInfo, outputSurfaceInfo)) {
+    if (Objects.equals(this.outputSurfaceInfo, outputSurfaceInfo)) {
       return;
     }
 
@@ -371,7 +365,13 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     this.outputSurfaceInfo = outputSurfaceInfo;
   }
 
-  private synchronized void destroyOutputEglSurface() {
+  private int getInputCapacity() {
+    return textureOutputListener == null
+        ? SURFACE_INPUT_CAPACITY
+        : outputTexturePool.freeTextureCount();
+  }
+
+  private void destroyOutputEglSurface() {
     if (outputEglSurface == null) {
       return;
     }
@@ -389,7 +389,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     }
   }
 
-  private synchronized void renderFrame(
+  private void renderFrame(
       GlObjectsProvider glObjectsProvider,
       GlTextureInfo inputTexture,
       long presentationTimeUs,
@@ -411,14 +411,11 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
               videoFrameProcessorListener.onError(
                   VideoFrameProcessingException.from(e, presentationTimeUs)));
     }
-    if (debugSurfaceViewWrapper != null && defaultShaderProgram != null) {
-      renderFrameToDebugSurface(glObjectsProvider, inputTexture, presentationTimeUs);
-    }
 
     inputListener.onInputFrameProcessed(inputTexture);
   }
 
-  private synchronized void renderFrameToOutputSurface(
+  private void renderFrameToOutputSurface(
       GlTextureInfo inputTexture, long presentationTimeUs, long renderTimeNs)
       throws VideoFrameProcessingException, GlUtil.GlException {
     EGLSurface outputEglSurface = checkNotNull(this.outputEglSurface);
@@ -434,12 +431,17 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     GlUtil.clearFocusedBuffers();
     defaultShaderProgram.drawFrame(inputTexture.texId, presentationTimeUs);
 
-    EGLExt.eglPresentationTimeANDROID(
-        eglDisplay,
-        outputEglSurface,
-        renderTimeNs == VideoFrameProcessor.RENDER_OUTPUT_FRAME_IMMEDIATELY
-            ? System.nanoTime()
-            : renderTimeNs);
+    long eglPresentationTimeNs;
+    if (renderTimeNs == RENDER_OUTPUT_FRAME_IMMEDIATELY) {
+      eglPresentationTimeNs = System.nanoTime();
+    } else if (renderTimeNs == RENDER_OUTPUT_FRAME_WITH_PRESENTATION_TIME) {
+      checkState(presentationTimeUs != C.TIME_UNSET);
+      eglPresentationTimeNs = presentationTimeUs * 1000;
+    } else {
+      eglPresentationTimeNs = renderTimeNs;
+    }
+
+    EGLExt.eglPresentationTimeANDROID(eglDisplay, outputEglSurface, eglPresentationTimeNs);
     EGL14.eglSwapBuffers(eglDisplay, outputEglSurface);
     DebugTraceUtil.logEvent(COMPONENT_VFP, EVENT_RENDERED_TO_OUTPUT_SURFACE, presentationTimeUs);
   }
@@ -464,7 +466,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
    *
    * <p>Returns {@code false} if {@code outputSurfaceInfo} is unset.
    */
-  private synchronized boolean ensureConfigured(
+  private boolean ensureConfigured(
       GlObjectsProvider glObjectsProvider, int inputWidth, int inputHeight)
       throws VideoFrameProcessingException, GlUtil.GlException {
     // Clear extra or outdated resources.
@@ -477,7 +479,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       this.inputHeight = inputHeight;
       Size outputSizeBeforeSurfaceTransformation =
           MatrixUtils.configureAndGetOutputSize(inputWidth, inputHeight, matrixTransformations);
-      if (!Util.areEqual(
+      if (!Objects.equals(
           this.outputSizeBeforeSurfaceTransformation, outputSizeBeforeSurfaceTransformation)) {
         this.outputSizeBeforeSurfaceTransformation = outputSizeBeforeSurfaceTransformation;
         videoFrameProcessorListenerExecutor.execute(
@@ -499,11 +501,11 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       return false;
     }
 
-    outputWidth =
+    int outputWidth =
         outputSurfaceInfo == null
             ? outputSizeBeforeSurfaceTransformation.getWidth()
             : outputSurfaceInfo.width;
-    outputHeight =
+    int outputHeight =
         outputSurfaceInfo == null
             ? outputSizeBeforeSurfaceTransformation.getHeight()
             : outputSurfaceInfo.height;
@@ -515,22 +517,11 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
               eglDisplay,
               outputSurfaceInfo.surface,
               outputColorInfo.colorTransfer,
-              // Frames are only rendered automatically when outputting to an encoder.
-              /* isEncoderInputSurface= */ renderFramesAutomatically);
+              outputSurfaceInfo.isEncoderInputSurface);
     }
     if (textureOutputListener != null) {
       outputTexturePool.ensureConfigured(glObjectsProvider, outputWidth, outputHeight);
     }
-
-    @Nullable
-    SurfaceView debugSurfaceView =
-        debugViewProvider.getDebugPreviewSurfaceView(outputWidth, outputHeight);
-    if (debugSurfaceView != null && !Util.areEqual(this.debugSurfaceView, debugSurfaceView)) {
-      debugSurfaceViewWrapper =
-          new SurfaceViewWrapper(
-              eglDisplay, eglContext, debugSurfaceView, outputColorInfo.colorTransfer);
-    }
-    this.debugSurfaceView = debugSurfaceView;
 
     if (defaultShaderProgram != null
         && (outputSurfaceInfoChanged || inputSizeChanged || matrixTransformationsChanged)) {
@@ -551,7 +542,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     return true;
   }
 
-  private synchronized DefaultShaderProgram createDefaultShaderProgram(
+  private DefaultShaderProgram createDefaultShaderProgram(
       int outputOrientationDegrees, int outputWidth, int outputHeight)
       throws VideoFrameProcessingException {
     ImmutableList.Builder<GlMatrixTransformation> matrixTransformationListBuilder =
@@ -584,122 +575,5 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       checkState(outputSize.getHeight() == outputSurfaceInfo.height);
     }
     return defaultShaderProgram;
-  }
-
-  private void renderFrameToDebugSurface(
-      GlObjectsProvider glObjectsProvider, GlTextureInfo inputTexture, long presentationTimeUs) {
-    DefaultShaderProgram defaultShaderProgram = checkNotNull(this.defaultShaderProgram);
-    SurfaceViewWrapper debugSurfaceViewWrapper = checkNotNull(this.debugSurfaceViewWrapper);
-    try {
-      checkNotNull(debugSurfaceViewWrapper)
-          .maybeRenderToSurfaceView(
-              () -> {
-                GlUtil.clearFocusedBuffers();
-                if (sdrWorkingColorSpace == WORKING_COLOR_SPACE_LINEAR) {
-                  @C.ColorTransfer
-                  int configuredColorTransfer = defaultShaderProgram.getOutputColorTransfer();
-                  defaultShaderProgram.setOutputColorTransfer(
-                      debugSurfaceViewWrapper.outputColorTransfer);
-                  defaultShaderProgram.drawFrame(inputTexture.texId, presentationTimeUs);
-                  defaultShaderProgram.setOutputColorTransfer(configuredColorTransfer);
-                } else {
-                  defaultShaderProgram.drawFrame(inputTexture.texId, presentationTimeUs);
-                }
-              },
-              glObjectsProvider);
-    } catch (VideoFrameProcessingException | GlUtil.GlException e) {
-      Log.d(TAG, "Error rendering to debug preview", e);
-    }
-  }
-
-  /**
-   * Wrapper around a {@link SurfaceView} that keeps track of whether the output surface is valid,
-   * and makes rendering a no-op if not.
-   */
-  private static final class SurfaceViewWrapper implements SurfaceHolder.Callback {
-    public final @C.ColorTransfer int outputColorTransfer;
-    private final EGLDisplay eglDisplay;
-    private final EGLContext eglContext;
-
-    @GuardedBy("this")
-    @Nullable
-    private Surface surface;
-
-    @GuardedBy("this")
-    @Nullable
-    private EGLSurface eglSurface;
-
-    private int width;
-    private int height;
-
-    public SurfaceViewWrapper(
-        EGLDisplay eglDisplay,
-        EGLContext eglContext,
-        SurfaceView surfaceView,
-        @C.ColorTransfer int outputColorTransfer) {
-      this.eglDisplay = eglDisplay;
-      this.eglContext = eglContext;
-      // PQ SurfaceView output is supported from API 33, but HLG output is supported from API 34.
-      // Therefore, convert HLG to PQ below API 34, so that HLG input can be displayed properly on
-      // API 33.
-      this.outputColorTransfer =
-          outputColorTransfer == C.COLOR_TRANSFER_HLG && Util.SDK_INT < 34
-              ? C.COLOR_TRANSFER_ST2084
-              : outputColorTransfer;
-      surfaceView.getHolder().addCallback(this);
-      surface = surfaceView.getHolder().getSurface();
-      width = surfaceView.getWidth();
-      height = surfaceView.getHeight();
-    }
-
-    @Override
-    public void surfaceCreated(SurfaceHolder holder) {}
-
-    @Override
-    public synchronized void surfaceChanged(
-        SurfaceHolder holder, int format, int width, int height) {
-      this.width = width;
-      this.height = height;
-      Surface newSurface = holder.getSurface();
-      if (surface == null || !surface.equals(newSurface)) {
-        surface = newSurface;
-        eglSurface = null;
-      }
-    }
-
-    @Override
-    public synchronized void surfaceDestroyed(SurfaceHolder holder) {
-      surface = null;
-      eglSurface = null;
-      width = C.LENGTH_UNSET;
-      height = C.LENGTH_UNSET;
-    }
-
-    /**
-     * Focuses the wrapped surface view's surface as an {@link EGLSurface}, renders using {@code
-     * renderingTask} and swaps buffers, if the view's holder has a valid surface. Does nothing
-     * otherwise.
-     *
-     * <p>Must be called on the GL thread.
-     */
-    public synchronized void maybeRenderToSurfaceView(
-        VideoFrameProcessingTaskExecutor.Task renderingTask, GlObjectsProvider glObjectsProvider)
-        throws GlUtil.GlException, VideoFrameProcessingException {
-      if (surface == null) {
-        return;
-      }
-
-      if (eglSurface == null) {
-        eglSurface =
-            glObjectsProvider.createEglSurface(
-                eglDisplay, surface, outputColorTransfer, /* isEncoderInputSurface= */ false);
-      }
-      EGLSurface eglSurface = this.eglSurface;
-      GlUtil.focusEglSurface(eglDisplay, eglContext, eglSurface, width, height);
-      renderingTask.run();
-      EGL14.eglSwapBuffers(eglDisplay, eglSurface);
-      // Prevents white flashing on the debug SurfaceView when frames are rendered too fast.
-      GLES20.glFinish();
-    }
   }
 }

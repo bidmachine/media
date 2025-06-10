@@ -35,6 +35,7 @@ import androidx.media3.common.util.Assertions;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DataSpec;
 import androidx.media3.datasource.TransferListener;
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManagerProvider;
 import androidx.media3.exoplayer.drm.DrmSessionEventListener;
@@ -58,6 +59,7 @@ import androidx.media3.exoplayer.source.SequenceableLoader;
 import androidx.media3.exoplayer.source.SinglePeriodTimeline;
 import androidx.media3.exoplayer.upstream.Allocator;
 import androidx.media3.exoplayer.upstream.CmcdConfiguration;
+import androidx.media3.exoplayer.upstream.CmcdData;
 import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy;
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo;
@@ -71,6 +73,7 @@ import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /** A SmoothStreaming {@link MediaSource}. */
 @UnstableApi
@@ -127,7 +130,7 @@ public final class SsMediaSource extends BaseMediaSource
      * @param chunkSourceFactory A factory for {@link SsChunkSource} instances.
      * @param manifestDataSourceFactory A factory for {@link DataSource} instances that will be used
      *     to load (and refresh) the manifest. May be {@code null} if the factory will only ever be
-     *     used to create create media sources with sideloaded manifests via {@link
+     *     used to create media sources with sideloaded manifests via {@link
      *     #createMediaSource(SsManifest, MediaItem)}.
      */
     public Factory(
@@ -422,7 +425,8 @@ public final class SsMediaSource extends BaseMediaSource
     return newConfiguration != null
         && newConfiguration.uri.equals(existingConfiguration.uri)
         && newConfiguration.streamKeys.equals(existingConfiguration.streamKeys)
-        && Util.areEqual(newConfiguration.drmConfiguration, existingConfiguration.drmConfiguration);
+        && Objects.equals(
+            newConfiguration.drmConfiguration, existingConfiguration.drmConfiguration);
   }
 
   @Override
@@ -496,6 +500,26 @@ public final class SsMediaSource extends BaseMediaSource
   }
 
   // Loader.Callback implementation
+
+  @Override
+  public void onLoadStarted(
+      ParsingLoadable<SsManifest> loadable,
+      long elapsedRealtimeMs,
+      long loadDurationMs,
+      int retryCount) {
+    LoadEventInfo loadEventInfo =
+        retryCount == 0
+            ? new LoadEventInfo(loadable.loadTaskId, loadable.dataSpec, elapsedRealtimeMs)
+            : new LoadEventInfo(
+                loadable.loadTaskId,
+                loadable.dataSpec,
+                loadable.getUri(),
+                loadable.getResponseHeaders(),
+                elapsedRealtimeMs,
+                loadDurationMs,
+                loadable.bytesLoaded());
+    manifestEventDispatcher.loadStarted(loadEventInfo, loadable.type, retryCount);
+  }
 
   @Override
   public void onLoadCompleted(
@@ -656,14 +680,20 @@ public final class SsMediaSource extends BaseMediaSource
     if (manifestLoader.hasFatalError()) {
       return;
     }
+    DataSpec dataSpec =
+        new DataSpec.Builder().setUri(manifestUri).setFlags(DataSpec.FLAG_ALLOW_GZIP).build();
+    if (cmcdConfiguration != null) {
+      CmcdData.Factory cmcdDataFactory =
+          new CmcdData.Factory(cmcdConfiguration, CmcdData.STREAMING_FORMAT_SS)
+              .setObjectType(CmcdData.OBJECT_TYPE_MANIFEST);
+      if (manifest != null) {
+        cmcdDataFactory.setIsLive(manifest.isLive);
+      }
+      dataSpec = cmcdDataFactory.createCmcdData().addToDataSpec(dataSpec);
+    }
     ParsingLoadable<SsManifest> loadable =
-        new ParsingLoadable<>(
-            manifestDataSource, manifestUri, C.DATA_TYPE_MANIFEST, manifestParser);
-    long elapsedRealtimeMs =
-        manifestLoader.startLoading(
-            loadable, this, loadErrorHandlingPolicy.getMinimumLoadableRetryCount(loadable.type));
-    manifestEventDispatcher.loadStarted(
-        new LoadEventInfo(loadable.loadTaskId, loadable.dataSpec, elapsedRealtimeMs),
-        loadable.type);
+        new ParsingLoadable<>(manifestDataSource, dataSpec, C.DATA_TYPE_MANIFEST, manifestParser);
+    manifestLoader.startLoading(
+        loadable, this, loadErrorHandlingPolicy.getMinimumLoadableRetryCount(loadable.type));
   }
 }

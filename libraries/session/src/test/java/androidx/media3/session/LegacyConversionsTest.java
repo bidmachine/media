@@ -16,7 +16,9 @@
 package androidx.media3.session;
 
 import static androidx.media3.session.MediaConstants.EXTRAS_KEY_COMMAND_BUTTON_ICON_COMPAT;
+import static androidx.media3.session.MediaConstants.EXTRAS_KEY_COMPLETION_STATUS;
 import static androidx.media3.session.MediaConstants.EXTRAS_KEY_MEDIA_TYPE_COMPAT;
+import static androidx.media3.session.MediaConstants.EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED;
 import static androidx.media3.session.MediaConstants.EXTRA_KEY_ROOT_CHILDREN_BROWSABLE_ONLY;
 import static androidx.media3.session.legacy.MediaBrowserCompat.MediaItem.FLAG_BROWSABLE;
 import static androidx.media3.session.legacy.MediaBrowserCompat.MediaItem.FLAG_PLAYABLE;
@@ -150,6 +152,8 @@ public final class LegacyConversionsTest {
 
   @Test
   public void convertToMediaDescriptionCompat_setsExpectedValues() {
+    Bundle extras = new Bundle();
+    extras.putInt(EXTRAS_KEY_COMPLETION_STATUS, EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED);
     MediaMetadata metadata =
         new MediaMetadata.Builder()
             .setTitle("testTitle")
@@ -158,6 +162,7 @@ public final class LegacyConversionsTest {
             .setWriter("testWriter")
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
             .setDurationMs(10_000L)
+            .setExtras(extras)
             .build();
     MediaItem mediaItem =
         new MediaItem.Builder().setMediaId("testId").setMediaMetadata(metadata).build();
@@ -171,6 +176,8 @@ public final class LegacyConversionsTest {
     assertThat(descriptionCompat.getDescription().toString()).isEqualTo("testAlbumTitle");
     assertThat(descriptionCompat.getExtras().getLong(EXTRAS_KEY_MEDIA_TYPE_COMPAT))
         .isEqualTo(MediaMetadata.MEDIA_TYPE_MUSIC);
+    assertThat(descriptionCompat.getExtras().getInt(EXTRAS_KEY_COMPLETION_STATUS))
+        .isEqualTo(EXTRAS_VALUE_COMPLETION_STATUS_PARTIALLY_PLAYED);
   }
 
   @Test
@@ -260,74 +267,35 @@ public final class LegacyConversionsTest {
   }
 
   @Test
-  public void convertToMediaMetadataCompat_displayTitleAndTitleHandledCorrectly() {
-    MediaMetadata mediaMetadataWithTitleOnly =
-        new MediaMetadata.Builder()
-            .setTitle("title")
-            .setSubtitle("subtitle")
-            .setDescription("description")
-            .setArtist("artist")
-            .setAlbumArtist("albumArtist")
-            .build();
-    MediaMetadata mediaMetadataWithDisplayTitleOnly =
-        new MediaMetadata.Builder()
-            .setDisplayTitle("displayTitle")
-            .setSubtitle("subtitle")
-            .setDescription("description")
-            .setArtist("artist")
-            .setAlbumArtist("albumArtist")
-            .build();
-    MediaMetadata mediaMetadataWithDisplayTitleAndTitle =
-        new MediaMetadata.Builder()
-            .setTitle("title")
-            .setDisplayTitle("displayTitle")
-            .setSubtitle("subtitle")
-            .setDescription("description")
-            .setArtist("artist")
-            .setAlbumArtist("albumArtist")
-            .build();
+  public void
+      convertToMediaDescriptionCompat_withoutDisplayTitleWithSubtitle_subtitleUsedAsSubtitle() {
+    MediaMetadata metadata =
+        new MediaMetadata.Builder().setTitle("a_title").setSubtitle("a_subtitle").build();
+    MediaItem mediaItem =
+        new MediaItem.Builder().setMediaId("testId").setMediaMetadata(metadata).build();
 
-    MediaDescriptionCompat mediaDescriptionCompatFromDisplayTitleAndTitle =
-        LegacyConversions.convertToMediaMetadataCompat(
-                mediaMetadataWithDisplayTitleAndTitle,
-                "mediaId",
-                /* mediaUri= */ null,
-                /* durationMs= */ 10_000L,
-                /* artworkBitmap= */ null)
-            .getDescription();
-    MediaDescriptionCompat mediaDescriptionCompatFromDisplayTitleOnly =
-        LegacyConversions.convertToMediaMetadataCompat(
-                mediaMetadataWithDisplayTitleOnly,
-                "mediaId",
-                /* mediaUri= */ null,
-                /* durationMs= */ 10_000L,
-                /* artworkBitmap= */ null)
-            .getDescription();
-    MediaDescriptionCompat mediaDescriptionCompatFromTitleOnly =
-        LegacyConversions.convertToMediaMetadataCompat(
-                mediaMetadataWithTitleOnly,
-                "mediaId",
-                /* mediaUri= */ null,
-                /* durationMs= */ 10_000L,
-                /* artworkBitmap= */ null)
-            .getDescription();
+    MediaDescriptionCompat descriptionCompat =
+        LegacyConversions.convertToMediaDescriptionCompat(mediaItem, /* artworkBitmap= */ null);
 
-    assertThat(mediaDescriptionCompatFromDisplayTitleAndTitle.getTitle().toString())
-        .isEqualTo("displayTitle");
-    assertThat(mediaDescriptionCompatFromDisplayTitleAndTitle.getSubtitle().toString())
-        .isEqualTo("subtitle");
-    assertThat(mediaDescriptionCompatFromDisplayTitleAndTitle.getDescription().toString())
-        .isEqualTo("description");
-    assertThat(mediaDescriptionCompatFromDisplayTitleOnly.getTitle().toString())
-        .isEqualTo("displayTitle");
-    assertThat(mediaDescriptionCompatFromDisplayTitleOnly.getSubtitle().toString())
-        .isEqualTo("subtitle");
-    assertThat(mediaDescriptionCompatFromDisplayTitleOnly.getDescription().toString())
-        .isEqualTo("description");
-    assertThat(mediaDescriptionCompatFromTitleOnly.getTitle().toString()).isEqualTo("title");
-    assertThat(mediaDescriptionCompatFromTitleOnly.getSubtitle().toString()).isEqualTo("artist");
-    assertThat(mediaDescriptionCompatFromTitleOnly.getDescription().toString())
-        .isEqualTo("albumArtist");
+    assertThat(descriptionCompat.getTitle().toString()).isEqualTo("a_title");
+    assertThat(descriptionCompat.getSubtitle().toString()).isEqualTo("a_subtitle");
+  }
+
+  @Test
+  public void convertToMediaDescriptionCompat_withDisplayTitleAndSubtitle_subtitleUsedAsSubtitle() {
+    MediaMetadata metadata =
+        new MediaMetadata.Builder()
+            .setDisplayTitle("a_display_title")
+            .setSubtitle("a_subtitle")
+            .build();
+    MediaItem mediaItem =
+        new MediaItem.Builder().setMediaId("testId").setMediaMetadata(metadata).build();
+
+    MediaDescriptionCompat descriptionCompat =
+        LegacyConversions.convertToMediaDescriptionCompat(mediaItem, /* artworkBitmap= */ null);
+
+    assertThat(descriptionCompat.getTitle().toString()).isEqualTo("a_display_title");
+    assertThat(descriptionCompat.getSubtitle().toString()).isEqualTo("a_subtitle");
   }
 
   @Test
@@ -705,9 +673,31 @@ public final class LegacyConversionsTest {
   }
 
   @Test
-  public void convertToPlayerCommands_withJustPlayAction_playPauseCommandNotAvailable() {
+  public void convertToPlayerCommands_withJustPlayActionWhileNotReady_playPauseCommandAvailable() {
     PlaybackStateCompat playbackStateCompat =
-        new PlaybackStateCompat.Builder().setActions(PlaybackStateCompat.ACTION_PLAY).build();
+        new PlaybackStateCompat.Builder()
+            .setState(PlaybackStateCompat.STATE_ERROR, /* position= */ 0, /* playbackSpeed= */ 1f)
+            .setActions(PlaybackStateCompat.ACTION_PLAY)
+            .build();
+
+    Player.Commands playerCommands =
+        LegacyConversions.convertToPlayerCommands(
+            playbackStateCompat,
+            /* volumeControlType= */ VolumeProviderCompat.VOLUME_CONTROL_FIXED,
+            /* sessionFlags= */ 0,
+            /* isSessionReady= */ true);
+
+    assertThat(getCommandsAsList(playerCommands)).contains(Player.COMMAND_PLAY_PAUSE);
+  }
+
+  @Test
+  public void convertToPlayerCommands_withJustPlayActionWhileReady_playPauseCommandNotAvailable() {
+    PlaybackStateCompat playbackStateCompat =
+        new PlaybackStateCompat.Builder()
+            .setState(
+                PlaybackStateCompat.STATE_BUFFERING, /* position= */ 0, /* playbackSpeed= */ 1f)
+            .setActions(PlaybackStateCompat.ACTION_PLAY)
+            .build();
 
     Player.Commands playerCommands =
         LegacyConversions.convertToPlayerCommands(
@@ -720,9 +710,13 @@ public final class LegacyConversionsTest {
   }
 
   @Test
-  public void convertToPlayerCommands_withJustPauseAction_playPauseCommandNotAvailable() {
+  public void
+      convertToPlayerCommands_withJustPauseActionWhileNotReady_playPauseCommandNotAvailable() {
     PlaybackStateCompat playbackStateCompat =
-        new PlaybackStateCompat.Builder().setActions(PlaybackStateCompat.ACTION_PAUSE).build();
+        new PlaybackStateCompat.Builder()
+            .setState(PlaybackStateCompat.STATE_ERROR, /* position= */ 0, /* playbackSpeed= */ 1f)
+            .setActions(PlaybackStateCompat.ACTION_PAUSE)
+            .build();
 
     Player.Commands playerCommands =
         LegacyConversions.convertToPlayerCommands(
@@ -732,6 +726,25 @@ public final class LegacyConversionsTest {
             /* isSessionReady= */ true);
 
     assertThat(getCommandsAsList(playerCommands)).doesNotContain(Player.COMMAND_PLAY_PAUSE);
+  }
+
+  @Test
+  public void convertToPlayerCommands_withJustPauseActionWhileReady_playPauseCommandAvailable() {
+    PlaybackStateCompat playbackStateCompat =
+        new PlaybackStateCompat.Builder()
+            .setState(
+                PlaybackStateCompat.STATE_BUFFERING, /* position= */ 0, /* playbackSpeed= */ 1f)
+            .setActions(PlaybackStateCompat.ACTION_PAUSE)
+            .build();
+
+    Player.Commands playerCommands =
+        LegacyConversions.convertToPlayerCommands(
+            playbackStateCompat,
+            /* volumeControlType= */ VolumeProviderCompat.VOLUME_CONTROL_FIXED,
+            /* sessionFlags= */ 0,
+            /* isSessionReady= */ true);
+
+    assertThat(getCommandsAsList(playerCommands)).contains(Player.COMMAND_PLAY_PAUSE);
   }
 
   @Test
@@ -1080,12 +1093,15 @@ public final class LegacyConversionsTest {
   }
 
   @Test
-  public void convertToCustomLayout_withNull_returnsEmptyList() {
-    assertThat(LegacyConversions.convertToCustomLayout(null)).isEmpty();
+  public void convertToMediaButtonPreferences_withNull_returnsEmptyList() {
+    assertThat(
+            LegacyConversions.convertToMediaButtonPreferences(
+                null, Player.Commands.EMPTY, Bundle.EMPTY))
+        .isEmpty();
   }
 
   @Test
-  public void convertToCustomLayout_withoutIconConstantInExtras() {
+  public void convertToMediaButtonPreferences_withoutIconConstantInExtras() {
     String extraKey = "key";
     String extraValue = "value";
     String actionStr = "action";
@@ -1107,7 +1123,9 @@ public final class LegacyConversionsTest {
             .addCustomAction(action)
             .build();
 
-    ImmutableList<CommandButton> buttons = LegacyConversions.convertToCustomLayout(state);
+    ImmutableList<CommandButton> buttons =
+        LegacyConversions.convertToMediaButtonPreferences(
+            state, Player.Commands.EMPTY, Bundle.EMPTY);
 
     assertThat(buttons).hasSize(1);
     CommandButton button = buttons.get(0);
@@ -1120,7 +1138,7 @@ public final class LegacyConversionsTest {
   }
 
   @Test
-  public void convertToCustomLayout_withIconConstantInExtras() {
+  public void convertToMediaButtonPreferences_withIconConstantInExtras() {
     String actionStr = "action";
     String displayName = "display_name";
     int iconRes = 21;
@@ -1140,7 +1158,9 @@ public final class LegacyConversionsTest {
             .addCustomAction(action)
             .build();
 
-    ImmutableList<CommandButton> buttons = LegacyConversions.convertToCustomLayout(state);
+    ImmutableList<CommandButton> buttons =
+        LegacyConversions.convertToMediaButtonPreferences(
+            state, Player.Commands.EMPTY, Bundle.EMPTY);
 
     assertThat(buttons).hasSize(1);
     CommandButton button = buttons.get(0);
@@ -1159,20 +1179,17 @@ public final class LegacyConversionsTest {
             LegacyConversions.convertToAudioAttributes((MediaControllerCompat.PlaybackInfo) null))
         .isSameInstanceAs(AudioAttributes.DEFAULT);
 
-    int contentType = AudioAttributesCompat.CONTENT_TYPE_MUSIC;
-    int flags = AudioAttributesCompat.FLAG_AUDIBILITY_ENFORCED;
-    int usage = AudioAttributesCompat.USAGE_MEDIA;
     AudioAttributesCompat aaCompat =
         new AudioAttributesCompat.Builder()
-            .setContentType(contentType)
-            .setFlags(flags)
-            .setUsage(usage)
+            .setContentType(AudioAttributesCompat.CONTENT_TYPE_MUSIC)
+            .setFlags(AudioAttributesCompat.FLAG_AUDIBILITY_ENFORCED)
+            .setUsage(AudioAttributesCompat.USAGE_MEDIA)
             .build();
     AudioAttributes aa =
         new AudioAttributes.Builder()
-            .setContentType(contentType)
-            .setFlags(flags)
-            .setUsage(usage)
+            .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+            .setFlags(C.FLAG_AUDIBILITY_ENFORCED)
+            .setUsage(C.USAGE_MEDIA)
             .build();
     assertThat(LegacyConversions.convertToAudioAttributes(aaCompat)).isEqualTo(aa);
     assertThat(LegacyConversions.convertToAudioAttributesCompat(aa)).isEqualTo(aaCompat);

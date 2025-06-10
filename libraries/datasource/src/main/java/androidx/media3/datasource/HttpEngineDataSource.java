@@ -26,28 +26,31 @@ import android.net.http.NetworkException;
 import android.net.http.UrlRequest;
 import android.net.http.UrlRequest.Status;
 import android.net.http.UrlResponseInfo;
+import android.os.Build;
 import android.text.TextUtils;
 import androidx.annotation.Nullable;
-import androidx.annotation.RequiresApi;
+import androidx.annotation.RequiresExtension;
 import androidx.annotation.VisibleForTesting;
 import androidx.media3.common.C;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.util.Assertions;
 import androidx.media3.common.util.Clock;
 import androidx.media3.common.util.ConditionVariable;
+import androidx.media3.common.util.Log;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
-import androidx.media3.datasource.HttpDataSource.CleartextNotPermittedException;
-import androidx.media3.datasource.HttpDataSource.HttpDataSourceException;
-import androidx.media3.datasource.HttpDataSource.InvalidResponseCodeException;
 import com.google.common.base.Ascii;
 import com.google.common.base.Predicate;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HttpHeaders;
 import com.google.common.primitives.Longs;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.net.CookieHandler;
+import java.net.CookieManager;
 import java.net.SocketTimeoutException;
+import java.net.URI;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
@@ -65,7 +68,7 @@ import java.util.concurrent.Executor;
  * priority) the {@code dataSpec}, {@link #setRequestProperty} and the default parameters used to
  * construct the instance.
  */
-@RequiresApi(34)
+@RequiresExtension(extension = Build.VERSION_CODES.S, version = 7)
 @UnstableApi
 public final class HttpEngineDataSource extends BaseDataSource implements HttpDataSource {
 
@@ -323,6 +326,8 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
   // The size of read buffer passed to cronet UrlRequest.read().
   private static final int READ_BUFFER_SIZE_BYTES = 32 * 1024;
 
+  private static final String TAG = "HttpEngineDataSource";
+
   private final HttpEngine httpEngine;
   private final Executor executor;
   private final int requestPriority;
@@ -340,7 +345,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
   private final boolean keepPostFor302Redirects;
 
   // Accessed by the calling thread only.
-  private boolean opened;
+  private boolean transferStarted;
   private long bytesRemaining;
 
   @Nullable private DataSpec currentDataSpec;
@@ -429,14 +434,20 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
   @Override
   @Nullable
   public Uri getUri() {
-    return responseInfo == null ? null : Uri.parse(responseInfo.getUrl());
+    if (responseInfo != null) {
+      return Uri.parse(responseInfo.getUrl());
+    } else if (currentDataSpec != null) {
+      return currentDataSpec.uri;
+    } else {
+      return null;
+    }
   }
 
   @UnstableApi
   @Override
   public long open(DataSpec dataSpec) throws HttpDataSourceException {
     Assertions.checkNotNull(dataSpec);
-    Assertions.checkState(!opened);
+    Assertions.checkState(!transferStarted);
 
     operation.close();
     resetConnectTimeout();
@@ -498,7 +509,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
         long documentSize =
             HttpUtil.getDocumentSize(getFirstHeader(responseHeaders, HttpHeaders.CONTENT_RANGE));
         if (dataSpec.position == documentSize) {
-          opened = true;
+          transferStarted = true;
           transferStarted(dataSpec);
           return dataSpec.length != C.LENGTH_UNSET ? dataSpec.length : 0;
         }
@@ -557,7 +568,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
       bytesRemaining = dataSpec.length;
     }
 
-    opened = true;
+    transferStarted = true;
     transferStarted(dataSpec);
 
     skipFully(bytesToSkip, dataSpec);
@@ -567,7 +578,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
   @UnstableApi
   @Override
   public int read(byte[] buffer, int offset, int length) throws HttpDataSourceException {
-    Assertions.checkState(opened);
+    Assertions.checkState(transferStarted);
 
     if (length == 0) {
       return 0;
@@ -638,7 +649,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
    */
   @UnstableApi
   public int read(ByteBuffer buffer) throws HttpDataSourceException {
-    Assertions.checkState(opened);
+    Assertions.checkState(transferStarted);
 
     if (!buffer.isDirect()) {
       throw new IllegalArgumentException("Passed buffer is not a direct ByteBuffer");
@@ -695,8 +706,8 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
     responseInfo = null;
     exception = null;
     finished = false;
-    if (opened) {
-      opened = false;
+    if (transferStarted) {
+      transferStarted = false;
       transferEnded();
     }
   }
@@ -705,7 +716,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
   @UnstableApi
   @VisibleForTesting
   @Nullable
-  UrlRequest.Callback getCurrentUrlRequestCallback() {
+  UrlRequestCallback getCurrentUrlRequestCallback() {
     return currentUrlRequestWrapper == null
         ? null
         : currentUrlRequestWrapper.getUrlRequestCallback();
@@ -929,14 +940,6 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
   }
 
   @Nullable
-  private static String parseCookies(@Nullable List<String> setCookieHeaders) {
-    if (setCookieHeaders == null || setCookieHeaders.isEmpty()) {
-      return null;
-    }
-    return TextUtils.join(";", setCookieHeaders);
-  }
-
-  @Nullable
   private static String getFirstHeader(Map<String, List<String>> allHeaders, String headerName) {
     @Nullable List<String> headers = allHeaders.get(headerName);
     return headers != null && !headers.isEmpty() ? headers.get(0) : null;
@@ -951,6 +954,61 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
     dst.put(src);
     src.limit(limit);
     return remaining;
+  }
+
+  // Stores the cookie headers from the response in the default {@link CookieHandler}.
+  private static void storeCookiesFromHeaders(UrlResponseInfo info) {
+    storeCookiesFromHeaders(info, CookieHandler.getDefault());
+  }
+
+  // Stores the cookie headers from the response in the provided {@link CookieHandler}.
+  private static void storeCookiesFromHeaders(
+      UrlResponseInfo info, @Nullable CookieHandler cookieHandler) {
+    if (cookieHandler == null) {
+      return;
+    }
+
+    try {
+      cookieHandler.put(new URI(info.getUrl()), info.getHeaders().getAsMap());
+    } catch (Exception e) {
+      Log.w(TAG, "Failed to store cookies in CookieHandler", e);
+    }
+  }
+
+  @VisibleForTesting
+  /* private */ static String getCookieHeader(String url) {
+    return getCookieHeader(url, ImmutableMap.of(), CookieHandler.getDefault());
+  }
+
+  @VisibleForTesting
+  /* private */ static String getCookieHeader(String url, @Nullable CookieHandler cookieHandler) {
+    return getCookieHeader(url, ImmutableMap.of(), cookieHandler);
+  }
+
+  // getCookieHeader maps Set-Cookie2 (RFC 2965) to Cookie just like CookieManager does.
+  private static String getCookieHeader(
+      String url, Map<String, List<String>> headers, @Nullable CookieHandler cookieHandler) {
+    if (cookieHandler == null) {
+      return "";
+    }
+
+    Map<String, List<String>> cookieHeaders = ImmutableMap.of();
+    try {
+      cookieHeaders = cookieHandler.get(new URI(url), headers);
+    } catch (Exception e) {
+      Log.w(TAG, "Failed to read cookies from CookieHandler", e);
+    }
+
+    StringBuilder cookies = new StringBuilder();
+    if (cookieHeaders.containsKey(HttpHeaders.COOKIE)) {
+      List<String> cookiesList = cookieHeaders.get(HttpHeaders.COOKIE);
+      if (cookiesList != null) {
+        for (String cookie : cookiesList) {
+          cookies.append(cookie).append("; ");
+        }
+      }
+    }
+    return cookies.toString().stripTrailing();
   }
 
   /**
@@ -980,7 +1038,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
       urlRequest.cancel();
     }
 
-    public UrlRequest.Callback getUrlRequestCallback() {
+    public UrlRequestCallback getUrlRequestCallback() {
       return urlRequestCallback;
     }
 
@@ -1000,8 +1058,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
     }
   }
 
-  private final class UrlRequestCallback implements UrlRequest.Callback {
-
+  final class UrlRequestCallback implements UrlRequest.Callback {
     private volatile boolean isClosed = false;
 
     public void close() {
@@ -1036,6 +1093,18 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
         resetConnectTimeout();
       }
 
+      CookieHandler cookieHandler = CookieHandler.getDefault();
+
+      if (cookieHandler == null && handleSetCookieRequests) {
+        // a temporary CookieManager is created for the duration of this request - this guarantees
+        // redirects preserve the cookies correctly.
+        cookieHandler = new CookieManager();
+      }
+
+      storeCookiesFromHeaders(info, cookieHandler);
+      String cookieHeaders =
+          getCookieHeader(info.getUrl(), info.getHeaders().getAsMap(), cookieHandler);
+
       boolean shouldKeepPost =
           keepPostFor302Redirects
               && dataSpec.httpMethod == DataSpec.HTTP_METHOD_POST
@@ -1043,17 +1112,12 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
 
       // request.followRedirect() transforms a POST request into a GET request, so if we want to
       // keep it as a POST we need to fall through to the manual redirect logic below.
-      if (!shouldKeepPost && !handleSetCookieRequests) {
-        request.followRedirect();
-        return;
-      }
-
-      @Nullable
-      String cookieHeadersValue =
-          parseCookies(info.getHeaders().getAsMap().get(HttpHeaders.SET_COOKIE));
-      if (!shouldKeepPost && TextUtils.isEmpty(cookieHeadersValue)) {
-        request.followRedirect();
-        return;
+      if (!shouldKeepPost) {
+        // No cookies, or we're not handling them - so just follow the redirect.
+        if (!handleSetCookieRequests || TextUtils.isEmpty(cookieHeaders)) {
+          request.followRedirect();
+          return;
+        }
       }
 
       request.cancel();
@@ -1071,13 +1135,15 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
       } else {
         redirectUrlDataSpec = dataSpec.withUri(Uri.parse(newLocationUrl));
       }
-      if (!TextUtils.isEmpty(cookieHeadersValue)) {
+
+      if (!TextUtils.isEmpty(cookieHeaders)) {
         Map<String, String> requestHeaders = new HashMap<>();
         requestHeaders.putAll(dataSpec.httpRequestHeaders);
-        requestHeaders.put(HttpHeaders.COOKIE, cookieHeadersValue);
+        requestHeaders.put(HttpHeaders.COOKIE, cookieHeaders);
         redirectUrlDataSpec =
             redirectUrlDataSpec.buildUpon().setHttpRequestHeaders(requestHeaders).build();
       }
+
       UrlRequestWrapper redirectUrlRequestWrapper;
       try {
         redirectUrlRequestWrapper = buildRequestWrapper(redirectUrlDataSpec);
@@ -1097,6 +1163,7 @@ public final class HttpEngineDataSource extends BaseDataSource implements HttpDa
       if (isClosed) {
         return;
       }
+      storeCookiesFromHeaders(info);
       responseInfo = info;
       operation.open();
     }

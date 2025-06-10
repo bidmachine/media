@@ -112,8 +112,7 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
             .setFlags(segmentBaseHolder.isPreload ? FLAG_MIGHT_NOT_USE_FULL_NETWORK_SPEED : 0)
             .build();
     if (cmcdDataFactory != null) {
-      CmcdData cmcdData =
-          cmcdDataFactory.setChunkDurationUs(mediaSegment.durationUs).createCmcdData();
+      CmcdData cmcdData = cmcdDataFactory.createCmcdData();
       dataSpec = cmcdData.addToDataSpec(dataSpec);
     }
 
@@ -146,9 +145,7 @@ import org.checkerframework.checker.nullness.qual.RequiresNonNull;
               .build();
       if (cmcdDataFactory != null) {
         CmcdData cmcdData =
-            cmcdDataFactory
-                .setObjectType(CmcdData.Factory.OBJECT_TYPE_INIT_SEGMENT)
-                .createCmcdData();
+            cmcdDataFactory.setObjectType(CmcdData.OBJECT_TYPE_INIT_SEGMENT).createCmcdData();
         initDataSpec = cmcdData.addToDataSpec(initDataSpec);
       }
 

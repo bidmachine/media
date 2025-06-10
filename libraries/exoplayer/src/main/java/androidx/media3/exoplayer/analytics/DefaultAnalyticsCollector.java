@@ -57,12 +57,12 @@ import androidx.media3.exoplayer.drm.DrmSession;
 import androidx.media3.exoplayer.source.LoadEventInfo;
 import androidx.media3.exoplayer.source.MediaLoadData;
 import androidx.media3.exoplayer.source.MediaSource.MediaPeriodId;
-import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 import org.checkerframework.checker.nullness.qual.RequiresNonNull;
 
@@ -164,6 +164,18 @@ public class DefaultAnalyticsCollector implements AnalyticsCollector {
     }
   }
 
+  @Override
+  public void onRendererReadyChanged(
+      int rendererIndex, @C.TrackType int rendererTrackType, boolean isRendererReady) {
+    EventTime eventTime = generateReadingMediaPeriodEventTime();
+    sendEvent(
+        eventTime,
+        AnalyticsListener.EVENT_RENDERER_READY_CHANGED,
+        listener ->
+            listener.onRendererReadyChanged(
+                eventTime, rendererIndex, rendererTrackType, isRendererReady));
+  }
+
   // Audio events.
 
   @Override
@@ -172,9 +184,7 @@ public class DefaultAnalyticsCollector implements AnalyticsCollector {
     sendEvent(
         eventTime,
         AnalyticsListener.EVENT_AUDIO_ENABLED,
-        listener -> {
-          listener.onAudioEnabled(eventTime, counters);
-        });
+        listener -> listener.onAudioEnabled(eventTime, counters));
   }
 
   @SuppressWarnings("deprecation") // Calling deprecated listener method.
@@ -237,9 +247,7 @@ public class DefaultAnalyticsCollector implements AnalyticsCollector {
     sendEvent(
         eventTime,
         AnalyticsListener.EVENT_AUDIO_DISABLED,
-        listener -> {
-          listener.onAudioDisabled(eventTime, counters);
-        });
+        listener -> listener.onAudioDisabled(eventTime, counters));
   }
 
   @Override
@@ -295,9 +303,7 @@ public class DefaultAnalyticsCollector implements AnalyticsCollector {
     sendEvent(
         eventTime,
         AnalyticsListener.EVENT_VIDEO_ENABLED,
-        listener -> {
-          listener.onVideoEnabled(eventTime, counters);
-        });
+        listener -> listener.onVideoEnabled(eventTime, counters));
   }
 
   @Override
@@ -349,9 +355,7 @@ public class DefaultAnalyticsCollector implements AnalyticsCollector {
     sendEvent(
         eventTime,
         AnalyticsListener.EVENT_VIDEO_DISABLED,
-        listener -> {
-          listener.onVideoDisabled(eventTime, counters);
-        });
+        listener -> listener.onVideoDisabled(eventTime, counters));
   }
 
   @Override
@@ -393,17 +397,23 @@ public class DefaultAnalyticsCollector implements AnalyticsCollector {
 
   // MediaSourceEventListener implementation.
 
+  // Deliberately calling deprecated listener method for backwards compatibility.
+  @SuppressWarnings("deprecation")
   @Override
   public final void onLoadStarted(
       int windowIndex,
       @Nullable MediaPeriodId mediaPeriodId,
       LoadEventInfo loadEventInfo,
-      MediaLoadData mediaLoadData) {
+      MediaLoadData mediaLoadData,
+      int retryCount) {
     EventTime eventTime = generateMediaPeriodEventTime(windowIndex, mediaPeriodId);
     sendEvent(
         eventTime,
         AnalyticsListener.EVENT_LOAD_STARTED,
-        listener -> listener.onLoadStarted(eventTime, loadEventInfo, mediaLoadData));
+        listener -> {
+          listener.onLoadStarted(eventTime, loadEventInfo, mediaLoadData);
+          listener.onLoadStarted(eventTime, loadEventInfo, mediaLoadData, retryCount);
+        });
   }
 
   @Override
@@ -762,7 +772,7 @@ public class DefaultAnalyticsCollector implements AnalyticsCollector {
               eventTime,
               videoSize.width,
               videoSize.height,
-              videoSize.unappliedRotationDegrees,
+              /* unappliedRotationDegrees= */ 0,
               videoSize.pixelWidthHeightRatio);
         });
   }
@@ -1113,11 +1123,11 @@ public class DefaultAnalyticsCollector implements AnalyticsCollector {
       ImmutableMap.Builder<MediaPeriodId, Timeline> builder = ImmutableMap.builder();
       if (mediaPeriodQueue.isEmpty()) {
         addTimelineForMediaPeriodId(builder, playingMediaPeriod, preferredTimeline);
-        if (!Objects.equal(readingMediaPeriod, playingMediaPeriod)) {
+        if (!Objects.equals(readingMediaPeriod, playingMediaPeriod)) {
           addTimelineForMediaPeriodId(builder, readingMediaPeriod, preferredTimeline);
         }
-        if (!Objects.equal(currentPlayerMediaPeriod, playingMediaPeriod)
-            && !Objects.equal(currentPlayerMediaPeriod, readingMediaPeriod)) {
+        if (!Objects.equals(currentPlayerMediaPeriod, playingMediaPeriod)
+            && !Objects.equals(currentPlayerMediaPeriod, readingMediaPeriod)) {
           addTimelineForMediaPeriodId(builder, currentPlayerMediaPeriod, preferredTimeline);
         }
       } else {

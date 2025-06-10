@@ -201,6 +201,8 @@ public class MediaController implements Player {
       "MediaController method is called from a wrong thread."
           + " See javadoc of MediaController for details.";
 
+  @UnstableApi protected static final long DEFAULT_PLATFORM_CALLBACK_AGGREGATION_TIMEOUT_MS = 100L;
+
   /** A builder for {@link MediaController}. */
   public static final class Builder {
 
@@ -210,6 +212,8 @@ public class MediaController implements Player {
     private Listener listener;
     private Looper applicationLooper;
     private @MonotonicNonNull BitmapLoader bitmapLoader;
+    private int maxCommandsForMediaItems;
+    private long platformSessionCallbackAggregationTimeoutMs;
 
     /**
      * Creates a builder for {@link MediaController}.
@@ -241,6 +245,8 @@ public class MediaController implements Player {
       connectionHints = Bundle.EMPTY;
       listener = new Listener() {};
       applicationLooper = Util.getCurrentOrMainLooper();
+      platformSessionCallbackAggregationTimeoutMs =
+          DEFAULT_PLATFORM_CALLBACK_AGGREGATION_TIMEOUT_MS;
     }
 
     /**
@@ -304,6 +310,40 @@ public class MediaController implements Player {
     }
 
     /**
+     * Sets the max number of commands the controller supports per media item.
+     *
+     * <p>Must be greater or equal to 0. The default is 0.
+     *
+     * @param maxCommandsForMediaItems The max number of commands per media item.
+     * @return The builder to allow chaining.
+     */
+    @UnstableApi
+    @CanIgnoreReturnValue
+    public Builder setMaxCommandsForMediaItems(int maxCommandsForMediaItems) {
+      checkArgument(maxCommandsForMediaItems >= 0);
+      this.maxCommandsForMediaItems = maxCommandsForMediaItems;
+      return this;
+    }
+
+    /**
+     * Sets the timeout after which updates from the platform session callbacks are applied to the
+     * browser, in milliseconds.
+     *
+     * <p>The default is 100ms.
+     *
+     * @param platformSessionCallbackAggregationTimeoutMs The timeout, in milliseconds.
+     * @return tThe builder to allow chaining.
+     */
+    @UnstableApi
+    @CanIgnoreReturnValue
+    public Builder experimentalSetPlatformSessionCallbackAggregationTimeoutMs(
+        long platformSessionCallbackAggregationTimeoutMs) {
+      this.platformSessionCallbackAggregationTimeoutMs =
+          platformSessionCallbackAggregationTimeoutMs;
+      return this;
+    }
+
+    /**
      * Builds a {@link MediaController} asynchronously.
      *
      * <p>The controller instance can be obtained like the following example:
@@ -337,7 +377,15 @@ public class MediaController implements Player {
       }
       MediaController controller =
           new MediaController(
-              context, token, connectionHints, listener, applicationLooper, holder, bitmapLoader);
+              context,
+              token,
+              connectionHints,
+              listener,
+              applicationLooper,
+              holder,
+              bitmapLoader,
+              maxCommandsForMediaItems,
+              platformSessionCallbackAggregationTimeoutMs);
       postOrRun(new Handler(applicationLooper), () -> holder.setController(controller));
       return holder;
     }
@@ -385,6 +433,10 @@ public class MediaController implements Player {
     /**
      * Called when the {@linkplain #getCustomLayout() custom layout} changed.
      *
+     * <p>This method will be deprecated, prefer to use {@link #onMediaButtonPreferencesChanged}.
+     * Note that the media button preferences use {@link CommandButton#slots} to define the allowed
+     * button placement.
+     *
      * <p>The custom layout can change when either the session {@linkplain
      * MediaSession#setCustomLayout changes the custom layout}, or when the session {@linkplain
      * MediaSession#setAvailableCommands(MediaSession.ControllerInfo, SessionCommands, Commands)
@@ -397,8 +449,26 @@ public class MediaController implements Player {
      * @param controller The controller.
      * @param layout The ordered list of {@linkplain CommandButton command buttons}.
      */
-    @UnstableApi
     default void onCustomLayoutChanged(MediaController controller, List<CommandButton> layout) {}
+
+    /**
+     * Called when the {@linkplain #getMediaButtonPreferences() media button preferences} changed.
+     *
+     * <p>The media button preferences can change when either the session {@linkplain
+     * MediaSession#setMediaButtonPreferences changes the media button preferences}, or when the
+     * session {@linkplain MediaSession#setAvailableCommands(MediaSession.ControllerInfo,
+     * SessionCommands, Commands) changes the available commands} for a controller that affect
+     * whether buttons of the media button preferences are enabled or disabled.
+     *
+     * <p>Note that the {@linkplain CommandButton#isEnabled enabled} flag is set to {@code false} if
+     * the available commands do not allow to use a button.
+     *
+     * @param controller The controller.
+     * @param mediaButtonPreferences The ordered list of {@linkplain CommandButton command buttons}.
+     */
+    @UnstableApi
+    default void onMediaButtonPreferencesChanged(
+        MediaController controller, List<CommandButton> mediaButtonPreferences) {}
 
     /**
      * Called when the available session commands are changed by session.
@@ -447,7 +517,7 @@ public class MediaController implements Player {
      */
     @UnstableApi
     default void onSessionActivityChanged(
-        MediaController controller, PendingIntent sessionActivity) {}
+        MediaController controller, @Nullable PendingIntent sessionActivity) {}
 
     /**
      * Called when an non-fatal error {@linkplain
@@ -492,6 +562,8 @@ public class MediaController implements Player {
 
   private boolean connectionNotified;
 
+  private final int maxCommandsForMediaItems;
+
   /* package */ final ConnectionCallback connectionCallback;
 
   /** Creates a {@link MediaController} from the {@link SessionToken}. */
@@ -504,7 +576,9 @@ public class MediaController implements Player {
       Listener listener,
       Looper applicationLooper,
       ConnectionCallback connectionCallback,
-      @Nullable BitmapLoader bitmapLoader) {
+      @Nullable BitmapLoader bitmapLoader,
+      int maxCommandsForMediaItems,
+      long platformSessionCallbackAggregationTimeoutMs) {
     checkNotNull(context, "context must not be null");
     checkNotNull(token, "token must not be null");
     Log.i(
@@ -525,8 +599,16 @@ public class MediaController implements Player {
     this.listener = listener;
     applicationHandler = new Handler(applicationLooper);
     this.connectionCallback = connectionCallback;
+    this.maxCommandsForMediaItems = maxCommandsForMediaItems;
 
-    impl = createImpl(context, token, connectionHints, applicationLooper, bitmapLoader);
+    impl =
+        createImpl(
+            context,
+            token,
+            connectionHints,
+            applicationLooper,
+            bitmapLoader,
+            platformSessionCallbackAggregationTimeoutMs);
     impl.connect();
   }
 
@@ -537,10 +619,17 @@ public class MediaController implements Player {
       SessionToken token,
       Bundle connectionHints,
       Looper applicationLooper,
-      @Nullable BitmapLoader bitmapLoader) {
+      @Nullable BitmapLoader bitmapLoader,
+      long platformSessionCallbackAggregationTimeoutMs) {
     if (token.isLegacySession()) {
       return new MediaControllerImplLegacy(
-          context, this, token, applicationLooper, checkNotNull(bitmapLoader));
+          context,
+          this,
+          token,
+          connectionHints,
+          applicationLooper,
+          checkNotNull(bitmapLoader),
+          platformSessionCallbackAggregationTimeoutMs);
     } else {
       return new MediaControllerImplBase(context, this, token, connectionHints, applicationLooper);
     }
@@ -634,6 +723,18 @@ public class MediaController implements Player {
   /** Returns whether this controller is connected to a {@link MediaSession} or not. */
   public final boolean isConnected() {
     return impl.isConnected();
+  }
+
+  /**
+   * Returns the command buttons that are supported for the given {@link MediaItem}.
+   *
+   * @param mediaItem The media item for which to get command buttons.
+   * @return The {@linkplain CommandButton command buttons} that are supported for the given media
+   *     item.
+   */
+  @UnstableApi
+  public final ImmutableList<CommandButton> getCommandButtonsForMediaItem(MediaItem mediaItem) {
+    return impl.getCommandButtonsForMediaItem(mediaItem);
   }
 
   @Override
@@ -1023,7 +1124,40 @@ public class MediaController implements Player {
   }
 
   /**
+   * Sends a custom command to the session for the given {@linkplain MediaItem media item}.
+   *
+   * <p>Calling this method is equivalent to calling {@link #sendCustomCommand(SessionCommand,
+   * Bundle)} and including the {@linkplain MediaItem#mediaId media ID} in the argument bundle with
+   * key {@link MediaConstants#EXTRA_KEY_MEDIA_ID}.
+   *
+   * <p>A command is not accepted if it is not a custom command or the command is not in the list of
+   * {@linkplain #getAvailableSessionCommands() available session commands}.
+   *
+   * <p>Interoperability: When connected to {@code
+   * android.support.v4.media.session.MediaSessionCompat}, {@link SessionResult#resultCode} will
+   * return the custom result code from the {@code android.os.ResultReceiver#onReceiveResult(int,
+   * Bundle)} instead of the standard result codes defined in the {@link SessionResult}.
+   *
+   * @param command The custom command.
+   * @param mediaItem The media item for which the command is sent.
+   * @param args The additional arguments. May be empty.
+   * @return A {@link ListenableFuture} of {@link SessionResult} representing the pending
+   *     completion.
+   */
+  @UnstableApi
+  public final ListenableFuture<SessionResult> sendCustomCommand(
+      SessionCommand command, MediaItem mediaItem, Bundle args) {
+    Bundle augnentedBundle = new Bundle(args);
+    augnentedBundle.putString(MediaConstants.EXTRA_KEY_MEDIA_ID, mediaItem.mediaId);
+    return sendCustomCommand(command, augnentedBundle);
+  }
+
+  /**
    * Returns the custom layout.
+   *
+   * <p>This method will be deprecated, prefer to use {@link #getMediaButtonPreferences()} instead.
+   * Note that the media button preferences use {@link CommandButton#slots} to define the allowed
+   * button placement.
    *
    * <p>After being connected, a change of the custom layout is reported with {@link
    * Listener#onCustomLayoutChanged(MediaController, List)}.
@@ -1033,10 +1167,26 @@ public class MediaController implements Player {
    *
    * @return The custom layout.
    */
-  @UnstableApi
   public final ImmutableList<CommandButton> getCustomLayout() {
     verifyApplicationThread();
     return isConnected() ? impl.getCustomLayout() : ImmutableList.of();
+  }
+
+  /**
+   * Returns the media button preferences.
+   *
+   * <p>After being connected, a change of the media button preferences is reported with {@link
+   * Listener#onMediaButtonPreferencesChanged(MediaController, List)}.
+   *
+   * <p>Note that the {@linkplain CommandButton#isEnabled enabled} flag is set to {@code false} if
+   * the available commands do not allow to use a button.
+   *
+   * @return The media button preferences.
+   */
+  @UnstableApi
+  public final ImmutableList<CommandButton> getMediaButtonPreferences() {
+    verifyApplicationThread();
+    return isConnected() ? impl.getMediaButtonPreferences() : ImmutableList.of();
   }
 
   /**
@@ -1047,7 +1197,6 @@ public class MediaController implements Player {
    *
    * @return The session extras.
    */
-  @UnstableApi
   public final Bundle getSessionExtras() {
     verifyApplicationThread();
     return isConnected() ? impl.getSessionExtras() : Bundle.EMPTY;
@@ -1428,16 +1577,6 @@ public class MediaController implements Player {
   }
 
   /**
-   * @deprecated Use {@link #hasPreviousMediaItem()} instead.
-   */
-  @UnstableApi
-  @Deprecated
-  @Override
-  public final boolean hasPrevious() {
-    return hasPreviousMediaItem();
-  }
-
-  /**
    * @deprecated Use {@link #hasNextMediaItem()} instead.
    */
   @UnstableApi
@@ -1445,16 +1584,6 @@ public class MediaController implements Player {
   @Override
   public final boolean hasNext() {
     return hasNextMediaItem();
-  }
-
-  /**
-   * @deprecated Use {@link #hasPreviousMediaItem()} instead.
-   */
-  @UnstableApi
-  @Deprecated
-  @Override
-  public final boolean hasPreviousWindow() {
-    return hasPreviousMediaItem();
   }
 
   /**
@@ -1477,16 +1606,6 @@ public class MediaController implements Player {
   public final boolean hasNextMediaItem() {
     verifyApplicationThread();
     return isConnected() && impl.hasNextMediaItem();
-  }
-
-  /**
-   * @deprecated Use {@link #seekToPreviousMediaItem()} instead.
-   */
-  @UnstableApi
-  @Deprecated
-  @Override
-  public final void previous() {
-    seekToPreviousMediaItem();
   }
 
   /**
@@ -1906,7 +2025,7 @@ public class MediaController implements Player {
   public final TrackSelectionParameters getTrackSelectionParameters() {
     verifyApplicationThread();
     if (!isConnected()) {
-      return TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT;
+      return TrackSelectionParameters.DEFAULT;
     }
     return impl.getTrackSelectionParameters();
   }
@@ -1924,6 +2043,10 @@ public class MediaController implements Player {
   public final Looper getApplicationLooper() {
     // Don't verify application thread. We allow calls to this method from any thread.
     return applicationHandler.getLooper();
+  }
+
+  /* package */ int getMaxCommandsForMediaItems() {
+    return maxCommandsForMediaItems;
   }
 
   /**
@@ -2030,6 +2153,10 @@ public class MediaController implements Player {
     return impl.getBinder();
   }
 
+  /* package */ Bundle getConnectionHints() {
+    return impl.getConnectionHints();
+  }
+
   private void verifyApplicationThread() {
     checkState(Looper.myLooper() == getApplicationLooper(), WRONG_THREAD_ERROR_MESSAGE);
   }
@@ -2037,6 +2164,8 @@ public class MediaController implements Player {
   /* package */ interface MediaControllerImpl {
 
     void connect(@UnderInitialization MediaControllerImpl this);
+
+    Bundle getConnectionHints();
 
     void addListener(Player.Listener listener);
 
@@ -2119,7 +2248,11 @@ public class MediaController implements Player {
 
     ListenableFuture<SessionResult> sendCustomCommand(SessionCommand command, Bundle args);
 
+    ImmutableList<CommandButton> getMediaButtonPreferences();
+
     ImmutableList<CommandButton> getCustomLayout();
+
+    ImmutableList<CommandButton> getCommandButtonsForMediaItem(MediaItem mediaItem);
 
     Bundle getSessionExtras();
 

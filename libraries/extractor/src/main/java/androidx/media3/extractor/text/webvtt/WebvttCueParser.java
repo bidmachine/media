@@ -43,6 +43,7 @@ import androidx.media3.common.text.HorizontalTextInVerticalContextSpan;
 import androidx.media3.common.text.RubySpan;
 import androidx.media3.common.text.SpanUtil;
 import androidx.media3.common.text.TextAnnotation;
+import androidx.media3.common.text.VoiceSpan;
 import androidx.media3.common.util.Assertions;
 import androidx.media3.common.util.Log;
 import androidx.media3.common.util.ParsableByteArray;
@@ -346,7 +347,7 @@ public final class WebvttCueParser {
           WebvttParserUtil.parseTimestampUs(Assertions.checkNotNull(cueHeaderMatcher.group(1)));
       builder.endTimeUs =
           WebvttParserUtil.parseTimestampUs(Assertions.checkNotNull(cueHeaderMatcher.group(2)));
-    } catch (NumberFormatException e) {
+    } catch (IllegalArgumentException e) {
       Log.w(TAG, "Skipping cue with bad header: " + cueHeaderMatcher.group());
       return null;
     }
@@ -555,8 +556,10 @@ public final class WebvttCueParser {
       case TAG_CLASS:
         applyDefaultColors(text, startTag.classes, start, end);
         break;
-      case TAG_LANG:
       case TAG_VOICE:
+        applyVoiceSpan(text, startTag.voice, start, end);
+        break;
+      case TAG_LANG:
       case "": // Case of the "whole cue" virtual tag.
         break;
       default:
@@ -656,6 +659,11 @@ public final class WebvttCueParser {
         text.setSpan(new BackgroundColorSpan(color), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
       }
     }
+  }
+
+  private static void applyVoiceSpan(
+      SpannableStringBuilder text, String voice, int start, int end) {
+    text.setSpan(new VoiceSpan(voice), start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
   }
 
   private static void applyStyleToText(

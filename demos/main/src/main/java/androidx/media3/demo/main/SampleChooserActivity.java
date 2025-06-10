@@ -45,7 +45,6 @@ import android.widget.ExpandableListView.OnChildClickListener;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
-import androidx.annotation.DoNotInline;
 import androidx.annotation.Nullable;
 import androidx.annotation.OptIn;
 import androidx.annotation.RequiresApi;
@@ -62,7 +61,6 @@ import androidx.media3.datasource.DataSourceUtil;
 import androidx.media3.datasource.DataSpec;
 import androidx.media3.exoplayer.RenderersFactory;
 import androidx.media3.exoplayer.offline.DownloadService;
-import com.google.common.base.Objects;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import java.io.IOException;
@@ -75,6 +73,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -525,7 +524,7 @@ public class SampleChooserActivity extends AppCompatActivity
 
     private PlaylistGroup getGroup(String groupName, List<PlaylistGroup> groups) {
       for (int i = 0; i < groups.size(); i++) {
-        if (Objects.equal(groupName, groups.get(i).title)) {
+        if (Objects.equals(groupName, groups.get(i).title)) {
           return groups.get(i);
         }
       }
@@ -667,7 +666,6 @@ public class SampleChooserActivity extends AppCompatActivity
   @RequiresApi(33)
   private static class Api33 {
 
-    @DoNotInline
     public static String getPostNotificationPermissionString() {
       return Manifest.permission.POST_NOTIFICATIONS;
     }

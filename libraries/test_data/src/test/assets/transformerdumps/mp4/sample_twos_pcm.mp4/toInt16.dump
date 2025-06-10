@@ -4,16 +4,18 @@ format audio:
   channelCount = 1
   sampleRate = 44100
   pcmEncoding = 2
-  metadata = entries=[xyz: latitude=40.68, longitude=-74.5, Mp4Timestamp: creation time=0, modification time=0, timescale=1000]
+  metadata = entries=[Mp4AlternateGroup: 1, xyz: latitude=40.68, longitude=-74.5, Mp4Timestamp: creation time=0, modification time=0, timescale=1000]
 format video:
+  averageBitrate = 718290
   id = 1
+  containerMimeType = video/mp4
   sampleMimeType = video/avc
   codecs = avc1.64001F
   maxInputSize = 36722
   maxNumReorderSamples = 2
   width = 1080
   height = 720
-  frameRate = 29.970028
+  frameRate = 29.97
   colorInfo:
     lumaBitdepth = 8
     chromaBitdepth = 8
@@ -22,6 +24,7 @@ format video:
     data = length 29, hash 4746B5D9
     data = length 10, hash 7A0D0F2B
 container metadata:
+  entry = Mp4AlternateGroup: 1
   entry = Mp4Timestamp: creation time=0, modification time=0, timescale=1000
   entry = Mp4Timestamp: creation time=0, modification time=0, timescale=1000
   entry = xyz: latitude=40.68, longitude=-74.5
@@ -148,8 +151,8 @@ sample:
   isKeyFrame = true
 sample:
   trackType = audio
-  dataHashCode = -1759454975
-  size = 440
+  dataHashCode = 1370367745
+  size = 3656
   isKeyFrame = true
 sample:
   trackType = video

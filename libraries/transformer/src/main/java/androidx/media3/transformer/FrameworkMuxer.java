@@ -17,45 +17,64 @@ package androidx.media3.transformer;
 
 import static androidx.media3.common.util.Assertions.checkNotNull;
 import static androidx.media3.common.util.Assertions.checkState;
+import static androidx.media3.common.util.CodecSpecificDataUtil.getCodecProfileAndLevel;
 import static androidx.media3.common.util.Util.SDK_INT;
 import static androidx.media3.common.util.Util.castNonNull;
+import static java.lang.Integer.max;
 
 import android.annotation.SuppressLint;
 import android.media.MediaCodec.BufferInfo;
+import android.media.MediaCodecInfo;
 import android.media.MediaFormat;
 import android.media.MediaMuxer;
-import androidx.annotation.Nullable;
+import android.util.Pair;
+import android.util.SparseArray;
+import androidx.annotation.RequiresApi;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.Metadata;
 import androidx.media3.common.MimeTypes;
+import androidx.media3.common.util.Log;
 import androidx.media3.common.util.MediaFormatUtil;
 import androidx.media3.common.util.Util;
 import androidx.media3.container.Mp4LocationData;
-import androidx.media3.muxer.Muxer;
+import androidx.media3.muxer.MuxerException;
 import com.google.common.collect.ImmutableList;
+import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.Locale;
 
 /** {@link Muxer} implementation that uses a {@link MediaMuxer}. */
 /* package */ final class FrameworkMuxer implements Muxer {
-  public static final String MUXER_STOPPING_FAILED_ERROR_MESSAGE = "Failed to stop the MediaMuxer";
-
-  // MediaMuxer supported sample formats are documented in MediaMuxer.addTrack(MediaFormat).
-  private static final ImmutableList<String> SUPPORTED_VIDEO_SAMPLE_MIME_TYPES =
-      getSupportedVideoSampleMimeTypes();
-  private static final ImmutableList<String> SUPPORTED_AUDIO_SAMPLE_MIME_TYPES =
-      ImmutableList.of(MimeTypes.AUDIO_AAC, MimeTypes.AUDIO_AMR_NB, MimeTypes.AUDIO_AMR_WB);
-
   /** {@link Muxer.Factory} for {@link FrameworkMuxer}. */
   public static final class Factory implements Muxer.Factory {
-    private final long videoDurationMs;
+    private long videoDurationUs;
 
-    public Factory(long videoDurationMs) {
-      this.videoDurationMs = videoDurationMs;
+    public Factory() {
+      this.videoDurationUs = C.TIME_UNSET;
+    }
+
+    /**
+     * Sets the duration of the video track (in microseconds) in the output.
+     *
+     * <p>Only the duration of the last sample is adjusted to achieve the given duration. Duration
+     * of the other samples remains unchanged.
+     *
+     * <p>The default is {@link C#TIME_UNSET} to not set any duration in the output. In this case
+     * the video track duration is determined by the samples written to it and the duration of the
+     * last sample would be the same as that of the sample before that.
+     *
+     * @param videoDurationUs The duration of the video track (in microseconds) in the output, or
+     *     {@link C#TIME_UNSET} to not set any duration. Only applicable when a video track is
+     *     {@linkplain #addTrack(Format) added}.
+     * @return This factory.
+     */
+    @CanIgnoreReturnValue
+    public Factory setVideoDurationUs(long videoDurationUs) {
+      this.videoDurationUs = videoDurationUs;
+      return this;
     }
 
     @Override
@@ -66,7 +85,7 @@ import java.util.Map;
       } catch (IOException e) {
         throw new MuxerException("Error creating muxer", e);
       }
-      return new FrameworkMuxer(mediaMuxer, videoDurationMs);
+      return new FrameworkMuxer(mediaMuxer, videoDurationUs);
     }
 
     @Override
@@ -80,31 +99,47 @@ import java.util.Map;
     }
   }
 
+  public static final String MUXER_NAME = "android.media:" + SDK_INT;
+  public static final String MUXER_STOPPING_FAILED_ERROR_MESSAGE = "Failed to stop the MediaMuxer";
+
+  // MediaMuxer supported sample formats are documented in MediaMuxer.addTrack(MediaFormat).
+  private static final ImmutableList<String> SUPPORTED_VIDEO_SAMPLE_MIME_TYPES =
+      getSupportedVideoSampleMimeTypes();
+  private static final ImmutableList<String> SUPPORTED_AUDIO_SAMPLE_MIME_TYPES =
+      ImmutableList.of(MimeTypes.AUDIO_AAC, MimeTypes.AUDIO_AMR_NB, MimeTypes.AUDIO_AMR_WB);
+  private static final String TAG = "FrameworkMuxer";
+  private static final int TRACK_ID_UNSET = -1;
+
   private final MediaMuxer mediaMuxer;
   private final long videoDurationUs;
-  private final Map<TrackToken, Long> trackTokenToLastPresentationTimeUs;
-  private final Map<TrackToken, Long> trackTokenToPresentationTimeOffsetUs;
+  private final SparseArray<Long> trackIdToLastPresentationTimeUs;
+  private final SparseArray<Long> trackIdToPresentationTimeOffsetUs;
 
-  @Nullable private TrackToken videoTrackToken;
+  private int videoTrackId;
 
   private boolean isStarted;
   private boolean isReleased;
 
-  private FrameworkMuxer(MediaMuxer mediaMuxer, long videoDurationMs) {
+  private FrameworkMuxer(MediaMuxer mediaMuxer, long videoDurationUs) {
     this.mediaMuxer = mediaMuxer;
-    this.videoDurationUs = Util.msToUs(videoDurationMs);
-    trackTokenToLastPresentationTimeUs = new HashMap<>();
-    trackTokenToPresentationTimeOffsetUs = new HashMap<>();
+    this.videoDurationUs = videoDurationUs;
+    trackIdToLastPresentationTimeUs = new SparseArray<>();
+    trackIdToPresentationTimeOffsetUs = new SparseArray<>();
+    videoTrackId = TRACK_ID_UNSET;
   }
 
   @Override
-  public TrackToken addTrack(Format format) throws MuxerException {
+  public int addTrack(Format format) throws MuxerException {
     String sampleMimeType = checkNotNull(format.sampleMimeType);
     MediaFormat mediaFormat;
     boolean isVideo = MimeTypes.isVideo(sampleMimeType);
     if (isVideo) {
       mediaFormat = MediaFormat.createVideoFormat(sampleMimeType, format.width, format.height);
       MediaFormatUtil.maybeSetColorInfo(mediaFormat, format.colorInfo);
+      if (sampleMimeType.equals(MimeTypes.VIDEO_DOLBY_VISION) && SDK_INT >= 33) {
+        mediaFormat.setInteger(MediaFormat.KEY_PROFILE, getDvProfile());
+        mediaFormat.setInteger(MediaFormat.KEY_LEVEL, getDvLevel(format));
+      }
       try {
         mediaMuxer.setOrientationHint(format.rotationDegrees);
       } catch (RuntimeException e) {
@@ -124,39 +159,43 @@ import java.util.Map;
       throw new MuxerException("Failed to add track with format=" + format, e);
     }
 
-    TrackToken trackToken = new TrackTokenImpl(trackIndex);
     if (isVideo) {
-      videoTrackToken = trackToken;
+      videoTrackId = trackIndex;
     }
 
-    return trackToken;
+    return trackIndex;
   }
 
   @Override
-  public void writeSampleData(TrackToken trackToken, ByteBuffer data, BufferInfo bufferInfo)
+  public void writeSampleData(int trackId, ByteBuffer data, BufferInfo bufferInfo)
       throws MuxerException {
     long presentationTimeUs = bufferInfo.presentationTimeUs;
     if (videoDurationUs != C.TIME_UNSET
-        && trackToken == videoTrackToken
+        && trackId == videoTrackId
         && presentationTimeUs > videoDurationUs) {
+      Log.w(
+          TAG,
+          String.format(
+              Locale.US,
+              "Skipped sample with presentation time (%d) > video duration (%d)",
+              presentationTimeUs,
+              videoDurationUs));
       return;
     }
     if (!isStarted) {
       if (Util.SDK_INT < 30 && presentationTimeUs < 0) {
-        trackTokenToPresentationTimeOffsetUs.put(trackToken, -presentationTimeUs);
+        trackIdToPresentationTimeOffsetUs.put(trackId, -presentationTimeUs);
       }
       startMuxer();
     }
 
     long presentationTimeOffsetUs =
-        trackTokenToPresentationTimeOffsetUs.containsKey(trackToken)
-            ? trackTokenToPresentationTimeOffsetUs.get(trackToken)
-            : 0;
+        trackIdToPresentationTimeOffsetUs.get(trackId, /* valueIfKeyNotFound= */ 0L);
     presentationTimeUs += presentationTimeOffsetUs;
 
     long lastSamplePresentationTimeUs =
-        trackTokenToLastPresentationTimeUs.containsKey(trackToken)
-            ? trackTokenToLastPresentationTimeUs.get(trackToken)
+        Util.contains(trackIdToLastPresentationTimeUs, trackId)
+            ? trackIdToLastPresentationTimeUs.get(trackId)
             : 0;
     // writeSampleData blocks on old API versions, so check here to avoid calling the method.
     checkState(
@@ -166,20 +205,21 @@ import java.util.Map;
             + " < "
             + lastSamplePresentationTimeUs
             + ") unsupported on this API version");
-    trackTokenToLastPresentationTimeUs.put(trackToken, presentationTimeUs);
+    trackIdToLastPresentationTimeUs.put(trackId, presentationTimeUs);
 
     checkState(
-        presentationTimeOffsetUs == 0 || presentationTimeUs >= lastSamplePresentationTimeUs,
-        "Samples not in presentation order ("
-            + presentationTimeUs
-            + " < "
-            + lastSamplePresentationTimeUs
-            + ") unsupported when using negative PTS workaround");
+        presentationTimeOffsetUs == 0 || presentationTimeUs >= 0,
+        String.format(
+            Locale.US,
+            "Sample presentation time (%d) < first sample presentation time (%d). Ensure the first"
+                + " sample has the smallest timestamp when using the negative PTS workaround.",
+            presentationTimeUs - presentationTimeOffsetUs,
+            -presentationTimeOffsetUs));
     bufferInfo.set(bufferInfo.offset, bufferInfo.size, presentationTimeUs, bufferInfo.flags);
 
     try {
-      checkState(trackToken instanceof TrackTokenImpl);
-      mediaMuxer.writeSampleData(((TrackTokenImpl) trackToken).trackIndex, data, bufferInfo);
+
+      mediaMuxer.writeSampleData(trackId, data, bufferInfo);
     } catch (RuntimeException e) {
       throw new MuxerException(
           "Failed to write sample for presentationTimeUs="
@@ -210,14 +250,14 @@ import java.util.Map;
       startMuxer();
     }
 
-    if (videoDurationUs != C.TIME_UNSET && videoTrackToken != null) {
+    if (videoDurationUs != C.TIME_UNSET && videoTrackId != TRACK_ID_UNSET) {
       BufferInfo bufferInfo = new BufferInfo();
       bufferInfo.set(
           /* newOffset= */ 0,
           /* newSize= */ 0,
           videoDurationUs,
           TransformerUtil.getMediaCodecFlags(C.BUFFER_FLAG_END_OF_STREAM));
-      writeSampleData(checkNotNull(videoTrackToken), ByteBuffer.allocateDirect(0), bufferInfo);
+      writeSampleData(videoTrackId, ByteBuffer.allocateDirect(0), bufferInfo);
     }
 
     isStarted = false;
@@ -275,17 +315,78 @@ import java.util.Map;
     if (SDK_INT >= 24) {
       supportedMimeTypes.add(MimeTypes.VIDEO_H265);
     }
+    if (SDK_INT >= 33) {
+      supportedMimeTypes.add(MimeTypes.VIDEO_DOLBY_VISION);
+    }
     if (SDK_INT >= 34) {
       supportedMimeTypes.add(MimeTypes.VIDEO_AV1);
     }
     return supportedMimeTypes.build();
   }
 
-  private static class TrackTokenImpl implements TrackToken {
-    public final int trackIndex;
+  /**
+   * Get Dolby Vision profile.
+   *
+   * <p>Refer to <a
+   * href="https://professionalsupport.dolby.com/s/article/What-is-Dolby-Vision-Profile">Dolby
+   * Vision profiles and levels.</a>.
+   */
+  @RequiresApi(33)
+  private static int getDvProfile() {
+    // Currently, only profile 8 is supported.
+    return MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheSt;
+  }
 
-    public TrackTokenImpl(int trackIndex) {
-      this.trackIndex = trackIndex;
+  /**
+   * Get Dolby Vision level
+   *
+   * <p>Refer to <a
+   * href="https://professionalsupport.dolby.com/s/article/What-is-Dolby-Vision-Profile">What are
+   * Dolby Vision profiles and levels</a>.
+   */
+  @RequiresApi(33)
+  private static int getDvLevel(Format format) {
+    if (format.codecs != null) {
+      Pair<Integer, Integer> profileAndLevel = getCodecProfileAndLevel(format);
+      return checkNotNull(profileAndLevel).second;
     }
+    int maxWidthHeight = max(format.width, format.height);
+    checkState(maxWidthHeight <= 7680);
+    float pps = format.width * format.height * format.frameRate;
+
+    int level = -1;
+    if (maxWidthHeight <= 1_280) {
+      if (pps <= 22_118_400) {
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelHd24; // Level 01
+      } else { // pps <= 27_648_000
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelHd30; // Level 02
+      }
+    } else if (maxWidthHeight <= 1_920 && pps <= 49_766_400) {
+      level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelFhd24; // Level 03
+    } else if (maxWidthHeight <= 2_560 && pps <= 62_208_000) {
+      level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelFhd30; // Level 04
+    } else if (maxWidthHeight <= 3_840) {
+      if (pps <= 124_416_000) {
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelFhd60; // Level 05
+      } else if (pps <= 199_065_600) {
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelUhd24; // Level 06
+      } else if (pps <= 248_832_000) {
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelUhd30; // Level 07
+      } else if (pps <= 398_131_200) {
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelUhd48; // Level 08
+      } else if (pps <= 497_664_000) {
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelUhd60; // Level 09
+      } else { // pps <= 995_328_000
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevelUhd120; // Level 10
+      }
+    } else if (maxWidthHeight <= 7_680) {
+      if (pps <= 995_328_000) {
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevel8k30; // Level 11
+      } else { // pps <= 1_990_656_000
+        level = MediaCodecInfo.CodecProfileLevel.DolbyVisionLevel8k60; // Level 12
+      }
+    }
+
+    return level;
   }
 }

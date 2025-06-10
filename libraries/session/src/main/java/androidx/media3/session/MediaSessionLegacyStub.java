@@ -35,7 +35,6 @@ import static androidx.media3.common.util.Assertions.checkNotNull;
 import static androidx.media3.common.util.Assertions.checkStateNotNull;
 import static androidx.media3.common.util.Util.castNonNull;
 import static androidx.media3.common.util.Util.postOrRun;
-import static androidx.media3.session.MediaUtils.TRANSACTION_SIZE_LIMIT_IN_BYTES;
 import static androidx.media3.session.SessionCommand.COMMAND_CODE_CUSTOM;
 import static androidx.media3.session.SessionError.ERROR_UNKNOWN;
 import static androidx.media3.session.SessionResult.RESULT_INFO_SKIPPED;
@@ -51,6 +50,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -59,7 +59,6 @@ import android.os.RemoteException;
 import android.os.ResultReceiver;
 import android.text.TextUtils;
 import android.view.KeyEvent;
-import androidx.annotation.DoNotInline;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.core.util.ObjectsCompat;
@@ -135,7 +134,8 @@ import org.checkerframework.checker.initialization.qual.Initialized;
   private int sessionFlags;
 
   @SuppressWarnings("PendingIntentMutability") // We can't use SaferPendingIntent
-  public MediaSessionLegacyStub(MediaSessionImpl session, Uri sessionUri, Handler handler) {
+  public MediaSessionLegacyStub(
+      MediaSessionImpl session, Uri sessionUri, Handler handler, Bundle tokenExtras) {
     sessionImpl = session;
     Context context = sessionImpl.getContext();
     sessionManager = MediaSessionManager.getSessionManager(context);
@@ -205,7 +205,7 @@ import org.checkerframework.checker.initialization.qual.Initialized;
             sessionCompatId,
             Util.SDK_INT < 31 ? receiverComponentName : null,
             Util.SDK_INT < 31 ? mediaButtonIntent : null,
-            session.getToken().getExtras());
+            /* sessionInfo= */ tokenExtras);
     if (Util.SDK_INT >= 31 && broadcastReceiverComponentName != null) {
       Api31.setMediaButtonBroadcastReceiver(sessionCompat, broadcastReceiverComponentName);
     }
@@ -280,8 +280,12 @@ import org.checkerframework.checker.initialization.qual.Initialized;
   @Override
   public void onCommand(String commandName, @Nullable Bundle args, @Nullable ResultReceiver cb) {
     checkStateNotNull(commandName);
-    if (TextUtils.equals(MediaConstants.SESSION_COMMAND_REQUEST_SESSION3_TOKEN, commandName)
-        && cb != null) {
+    if (commandName.equals(MediaConstants.SESSION_COMMAND_MEDIA3_PLAY_REQUEST)) {
+      // Only applicable to controllers on Media3 1.5, where this command was sent via sendCommand
+      // instead of sendCustomAction. No need to handle this command here.
+      return;
+    }
+    if (commandName.equals(MediaConstants.SESSION_COMMAND_REQUEST_SESSION3_TOKEN) && cb != null) {
       cb.send(RESULT_SUCCESS, sessionImpl.getToken().toBundle());
       return;
     }
@@ -302,6 +306,10 @@ import org.checkerframework.checker.initialization.qual.Initialized;
 
   @Override
   public void onCustomAction(String action, @Nullable Bundle args) {
+    if (action.equals(MediaConstants.SESSION_COMMAND_MEDIA3_PLAY_REQUEST)) {
+      // Ignore, no need to handle the custom action.
+      return;
+    }
     SessionCommand command = new SessionCommand(action, /* extras= */ Bundle.EMPTY);
     dispatchSessionTaskWithSessionCommand(
         command,
@@ -320,7 +328,8 @@ import org.checkerframework.checker.initialization.qual.Initialized;
             ControllerInfo.LEGACY_CONTROLLER_INTERFACE_VERSION,
             /* trusted= */ false,
             /* cb= */ null,
-            /* connectionHints= */ Bundle.EMPTY),
+            /* connectionHints= */ Bundle.EMPTY,
+            /* maxCommandsForMediaItems= */ 0),
         intent);
   }
 
@@ -782,7 +791,8 @@ import org.checkerframework.checker.initialization.qual.Initialized;
               ControllerInfo.LEGACY_CONTROLLER_INTERFACE_VERSION,
               sessionManager.isTrustedForMediaControl(remoteUserInfo),
               controllerCb,
-              /* connectionHints= */ Bundle.EMPTY);
+              /* connectionHints= */ Bundle.EMPTY,
+              /* maxCommandsForMediaItems= */ 0);
       MediaSession.ConnectionResult connectionResult = sessionImpl.onConnectOnHandler(controller);
       if (!connectionResult.isAccepted) {
         try {
@@ -1019,7 +1029,7 @@ import org.checkerframework.checker.initialization.qual.Initialized;
         return false;
       }
       ControllerLegacyCb other = (ControllerLegacyCb) obj;
-      return Util.areEqual(remoteUserInfo, other.remoteUserInfo);
+      return Objects.equals(remoteUserInfo, other.remoteUserInfo);
     }
   }
 
@@ -1056,18 +1066,18 @@ import org.checkerframework.checker.initialization.qual.Initialized;
       // can point to the valid current media item in the playlist.
       Timeline newTimeline = newPlayerWrapper.getCurrentTimelineWithCommandCheck();
       if (oldPlayerWrapper == null
-          || !Util.areEqual(oldPlayerWrapper.getCurrentTimelineWithCommandCheck(), newTimeline)) {
+          || !Objects.equals(oldPlayerWrapper.getCurrentTimelineWithCommandCheck(), newTimeline)) {
         onTimelineChanged(seq, newTimeline, Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED);
       }
       MediaMetadata newPlaylistMetadata = newPlayerWrapper.getPlaylistMetadataWithCommandCheck();
       if (oldPlayerWrapper == null
-          || !Util.areEqual(
+          || !Objects.equals(
               oldPlayerWrapper.getPlaylistMetadataWithCommandCheck(), newPlaylistMetadata)) {
         onPlaylistMetadataChanged(seq, newPlaylistMetadata);
       }
       MediaMetadata newMediaMetadata = newPlayerWrapper.getMediaMetadataWithCommandCheck();
       if (oldPlayerWrapper == null
-          || !Util.areEqual(
+          || !Objects.equals(
               oldPlayerWrapper.getMediaMetadataWithCommandCheck(), newMediaMetadata)) {
         onMediaMetadataChanged(seq, newMediaMetadata);
       }
@@ -1080,15 +1090,19 @@ import org.checkerframework.checker.initialization.qual.Initialized;
         onRepeatModeChanged(seq, newPlayerWrapper.getRepeatMode());
       }
 
-      // Forcefully update playback info to update VolumeProviderCompat attached to the
-      // old player.
+      // Forcefully update device info to update VolumeProviderCompat attached to the old player.
       onDeviceInfoChanged(seq, newPlayerWrapper.getDeviceInfo());
+
+      if (hasChangedSlotReservationExtras(oldPlayerWrapper, newPlayerWrapper)) {
+        sessionCompat.setExtras(newPlayerWrapper.getLegacyExtras());
+      }
 
       // Rest of changes are all notified via PlaybackStateCompat.
       maybeUpdateFlags(newPlayerWrapper);
       @Nullable MediaItem newMediaItem = newPlayerWrapper.getCurrentMediaItemWithCommandCheck();
       if (oldPlayerWrapper == null
-          || !Util.areEqual(oldPlayerWrapper.getCurrentMediaItemWithCommandCheck(), newMediaItem)) {
+          || !Objects.equals(
+              oldPlayerWrapper.getCurrentMediaItemWithCommandCheck(), newMediaItem)) {
         // Note: This will update both PlaybackStateCompat and metadata.
         onMediaItemTransition(
             seq, newMediaItem, Player.MEDIA_ITEM_TRANSITION_REASON_PLAYLIST_CHANGED);
@@ -1111,14 +1125,20 @@ import org.checkerframework.checker.initialization.qual.Initialized;
     }
 
     @Override
+    public void setMediaButtonPreferences(int seq, List<CommandButton> mediaButtonPreferences) {
+      updateLegacySessionPlaybackState(sessionImpl.getPlayerWrapper());
+    }
+
+    @Override
     public void onSessionExtrasChanged(int seq, Bundle sessionExtras) {
-      sessionCompat.setExtras(sessionExtras);
-      sessionImpl.getPlayerWrapper().setLegacyExtras(sessionExtras);
+      PlayerWrapper playerWrapper = sessionImpl.getPlayerWrapper();
+      playerWrapper.setLegacyExtras(sessionExtras);
+      sessionCompat.setExtras(playerWrapper.getLegacyExtras());
       sessionCompat.setPlaybackState(sessionImpl.getPlayerWrapper().createPlaybackStateCompat());
     }
 
     @Override
-    public void onSessionActivityChanged(int seq, PendingIntent sessionActivity) {
+    public void onSessionActivityChanged(int seq, @Nullable PendingIntent sessionActivity) {
       sessionCompat.setSessionActivity(sessionActivity);
     }
 
@@ -1226,7 +1246,7 @@ import org.checkerframework.checker.initialization.qual.Initialized;
           () -> {
             int completedBitmapFutureCount = resultCount.incrementAndGet();
             if (completedBitmapFutureCount == mediaItemList.size()) {
-              handleBitmapFuturesAllCompletedAndSetQueue(bitmapFutures, timeline, mediaItemList);
+              handleBitmapFuturesAllCompletedAndSetQueue(bitmapFutures, mediaItemList);
             }
           };
 
@@ -1247,9 +1267,7 @@ import org.checkerframework.checker.initialization.qual.Initialized;
     }
 
     private void handleBitmapFuturesAllCompletedAndSetQueue(
-        List<@NullableType ListenableFuture<Bitmap>> bitmapFutures,
-        Timeline timeline,
-        List<MediaItem> mediaItems) {
+        List<@NullableType ListenableFuture<Bitmap>> bitmapFutures, List<MediaItem> mediaItems) {
       List<QueueItem> queueItemList = new ArrayList<>();
       for (int i = 0; i < bitmapFutures.size(); i++) {
         @Nullable ListenableFuture<Bitmap> future = bitmapFutures.get(i);
@@ -1264,22 +1282,9 @@ import org.checkerframework.checker.initialization.qual.Initialized;
         queueItemList.add(LegacyConversions.convertToQueueItem(mediaItems.get(i), i, bitmap));
       }
 
-      if (Util.SDK_INT < 21) {
-        // In order to avoid TransactionTooLargeException for below API 21, we need to
-        // cut the list so that it doesn't exceed the binder transaction limit.
-        List<QueueItem> truncatedList =
-            MediaUtils.truncateListBySize(queueItemList, TRANSACTION_SIZE_LIMIT_IN_BYTES);
-        if (truncatedList.size() != timeline.getWindowCount()) {
-          Log.i(
-              TAG,
-              "Sending " + truncatedList.size() + " items out of " + timeline.getWindowCount());
-        }
-        setQueue(sessionCompat, truncatedList);
-      } else {
-        // Framework MediaSession#setQueue() uses ParceledListSlice,
-        // which means we can safely send long lists.
-        setQueue(sessionCompat, queueItemList);
-      }
+      // Framework MediaSession#setQueue() uses ParceledListSlice,
+      // which means we can safely send long lists.
+      setQueue(sessionCompat, queueItemList);
     }
 
     @Override
@@ -1426,6 +1431,28 @@ import org.checkerframework.checker.initialization.qual.Initialized;
     }
   }
 
+  private static boolean hasChangedSlotReservationExtras(
+      @Nullable PlayerWrapper oldPlayerWrapper, PlayerWrapper newPlayerWrapper) {
+    if (oldPlayerWrapper == null) {
+      return true;
+    }
+    Bundle oldExtras = oldPlayerWrapper.getLegacyExtras();
+    boolean oldPrevReservation =
+        oldExtras.getBoolean(
+            MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_PREV, /* defaultVale= */ false);
+    boolean oldNextReservation =
+        oldExtras.getBoolean(
+            MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_NEXT, /* defaultVale= */ false);
+    Bundle newExtras = newPlayerWrapper.getLegacyExtras();
+    boolean newPrevReservation =
+        newExtras.getBoolean(
+            MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_PREV, /* defaultVale= */ false);
+    boolean newNextReservation =
+        newExtras.getBoolean(
+            MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_NEXT, /* defaultVale= */ false);
+    return (oldPrevReservation != newPrevReservation) || (oldNextReservation != newNextReservation);
+  }
+
   private static class ConnectionTimeoutHandler extends Handler {
 
     private static final int MSG_CONNECTION_TIMED_OUT = 1001;
@@ -1481,11 +1508,7 @@ import org.checkerframework.checker.initialization.qual.Initialized;
 
     @Override
     public void onReceive(Context context, Intent intent) {
-      if (!Util.areEqual(intent.getAction(), Intent.ACTION_MEDIA_BUTTON)) {
-        return;
-      }
-      Uri sessionUri = intent.getData();
-      if (!Util.areEqual(sessionUri, sessionUri)) {
+      if (!Objects.equals(intent.getAction(), Intent.ACTION_MEDIA_BUTTON)) {
         return;
       }
       KeyEvent keyEvent = intent.getParcelableExtra(Intent.EXTRA_KEY_EVENT);
@@ -1498,11 +1521,24 @@ import org.checkerframework.checker.initialization.qual.Initialized;
 
   @RequiresApi(31)
   private static final class Api31 {
-    @DoNotInline
     public static void setMediaButtonBroadcastReceiver(
         MediaSessionCompat mediaSessionCompat, ComponentName broadcastReceiver) {
-      ((android.media.session.MediaSession) checkNotNull(mediaSessionCompat.getMediaSession()))
-          .setMediaButtonBroadcastReceiver(broadcastReceiver);
+      try {
+        ((android.media.session.MediaSession) checkNotNull(mediaSessionCompat.getMediaSession()))
+            .setMediaButtonBroadcastReceiver(broadcastReceiver);
+      } catch (IllegalArgumentException e) {
+        if (Build.MANUFACTURER.equals("motorola")) {
+          // Internal bug ref: b/367415658
+          Log.e(
+              TAG,
+              "caught IllegalArgumentException on a motorola device when attempting to set the"
+                  + " media button broadcast receiver. See"
+                  + " https://github.com/androidx/media/issues/1730 for details.",
+              e);
+        } else {
+          throw e;
+        }
+      }
     }
   }
 }

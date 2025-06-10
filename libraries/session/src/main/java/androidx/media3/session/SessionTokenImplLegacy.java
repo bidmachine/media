@@ -24,12 +24,13 @@ import static androidx.media3.session.SessionToken.TYPE_SESSION;
 import static androidx.media3.session.SessionToken.TYPE_SESSION_LEGACY;
 
 import android.content.ComponentName;
+import android.media.session.MediaSession;
 import android.os.Bundle;
 import androidx.annotation.Nullable;
 import androidx.media3.common.util.Util;
 import androidx.media3.session.SessionToken.SessionTokenImpl;
 import androidx.media3.session.legacy.MediaSessionCompat;
-import com.google.common.base.Objects;
+import java.util.Objects;
 
 /* package */ final class SessionTokenImplLegacy implements SessionTokenImpl {
 
@@ -83,7 +84,7 @@ import com.google.common.base.Objects;
 
   @Override
   public int hashCode() {
-    return Objects.hashCode(type, componentName, legacyToken);
+    return Objects.hash(type, componentName, legacyToken);
   }
 
   @Override
@@ -97,9 +98,9 @@ import com.google.common.base.Objects;
     }
     switch (type) {
       case TYPE_SESSION_LEGACY:
-        return Util.areEqual(legacyToken, other.legacyToken);
+        return Objects.equals(legacyToken, other.legacyToken);
       case TYPE_BROWSER_SERVICE_LEGACY:
-        return Util.areEqual(componentName, other.componentName);
+        return Objects.equals(componentName, other.componentName);
     }
     return false;
   }
@@ -111,7 +112,7 @@ import com.google.common.base.Objects;
 
   @Override
   public String toString() {
-    return "SessionToken {legacyToken=" + legacyToken + "}";
+    return "SessionToken {legacy, uid=" + uid + "}";
   }
 
   @Override
@@ -166,6 +167,12 @@ import com.google.common.base.Objects;
   @Nullable
   public Object getBinder() {
     return legacyToken;
+  }
+
+  @Nullable
+  @Override
+  public MediaSession.Token getPlatformToken() {
+    return legacyToken == null ? null : (MediaSession.Token) legacyToken.getToken();
   }
 
   private static final String FIELD_LEGACY_TOKEN = Util.intToStringMaxRadix(0);

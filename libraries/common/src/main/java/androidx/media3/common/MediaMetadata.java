@@ -29,14 +29,16 @@ import androidx.annotation.IntRange;
 import androidx.annotation.Nullable;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
-import com.google.common.base.Objects;
+import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Metadata of a {@link MediaItem}, playlist, or a combination of multiple sources of {@link
@@ -85,8 +87,11 @@ public final class MediaMetadata {
     @Nullable private CharSequence station;
     @Nullable private @MediaType Integer mediaType;
     @Nullable private Bundle extras;
+    private ImmutableList<String> supportedCommands;
 
-    public Builder() {}
+    public Builder() {
+      supportedCommands = ImmutableList.of();
+    }
 
     @SuppressWarnings("deprecation") // Assigning from deprecated fields.
     private Builder(MediaMetadata mediaMetadata) {
@@ -123,6 +128,7 @@ public final class MediaMetadata {
       this.compilation = mediaMetadata.compilation;
       this.station = mediaMetadata.station;
       this.mediaType = mediaMetadata.mediaType;
+      this.supportedCommands = mediaMetadata.supportedCommands;
       this.extras = mediaMetadata.extras;
     }
 
@@ -188,7 +194,6 @@ public final class MediaMetadata {
      *
      * @throws IllegalArgumentException if the duration is negative.
      */
-    @UnstableApi
     @CanIgnoreReturnValue
     public Builder setDurationMs(@Nullable Long durationMs) {
       checkArgument(durationMs == null || durationMs >= 0);
@@ -244,8 +249,8 @@ public final class MediaMetadata {
     @CanIgnoreReturnValue
     public Builder maybeSetArtworkData(byte[] artworkData, @PictureType int artworkDataType) {
       if (this.artworkData == null
-          || Util.areEqual(artworkDataType, PICTURE_TYPE_FRONT_COVER)
-          || !Util.areEqual(this.artworkDataType, PICTURE_TYPE_FRONT_COVER)) {
+          || artworkDataType == PICTURE_TYPE_FRONT_COVER
+          || !Objects.equals(this.artworkDataType, PICTURE_TYPE_FRONT_COVER)) {
         this.artworkData = artworkData.clone();
         this.artworkDataType = artworkDataType;
       }
@@ -441,6 +446,17 @@ public final class MediaMetadata {
     }
 
     /**
+     * Sets the IDs of the supported commands (see for instance {@code
+     * CommandButton.sessionCommand.customAction} of the Media3 session module).
+     */
+    @CanIgnoreReturnValue
+    @UnstableApi
+    public Builder setSupportedCommands(List<String> supportedCommands) {
+      this.supportedCommands = ImmutableList.copyOf(supportedCommands);
+      return this;
+    }
+
+    /**
      * Sets all fields supported by the {@link Metadata.Entry entries} within the {@link Metadata}.
      *
      * <p>Fields are only set if the {@link Metadata.Entry} has an implementation for {@link
@@ -594,6 +610,10 @@ public final class MediaMetadata {
       }
       if (mediaMetadata.extras != null) {
         setExtras(mediaMetadata.extras);
+      }
+
+      if (!mediaMetadata.supportedCommands.isEmpty()) {
+        setSupportedCommands(mediaMetadata.supportedCommands);
       }
 
       return this;
@@ -1008,7 +1028,7 @@ public final class MediaMetadata {
    * informational purpose only. For retrieving the duration of the media item currently being
    * played, use {@link Player#getDuration()} instead.
    */
-  @UnstableApi @Nullable public final Long durationMs;
+  @Nullable public final Long durationMs;
 
   /** Optional user {@link Rating}. */
   @Nullable public final Rating userRating;
@@ -1123,6 +1143,12 @@ public final class MediaMetadata {
    */
   @Nullable public final Bundle extras;
 
+  /**
+   * The IDs of the supported commands of this media item (see for instance {@code
+   * CommandButton.sessionCommand.customAction} of the Media3 session module).
+   */
+  @UnstableApi public final ImmutableList<String> supportedCommands;
+
   @SuppressWarnings("deprecation") // Assigning deprecated fields.
   private MediaMetadata(Builder builder) {
     // Handle compatibility for deprecated fields.
@@ -1175,6 +1201,7 @@ public final class MediaMetadata {
     this.compilation = builder.compilation;
     this.station = builder.station;
     this.mediaType = mediaType;
+    this.supportedCommands = builder.supportedCommands;
     this.extras = builder.extras;
   }
 
@@ -1194,46 +1221,47 @@ public final class MediaMetadata {
       return false;
     }
     MediaMetadata that = (MediaMetadata) obj;
-    return Util.areEqual(title, that.title)
-        && Util.areEqual(artist, that.artist)
-        && Util.areEqual(albumTitle, that.albumTitle)
-        && Util.areEqual(albumArtist, that.albumArtist)
-        && Util.areEqual(displayTitle, that.displayTitle)
-        && Util.areEqual(subtitle, that.subtitle)
-        && Util.areEqual(description, that.description)
-        && Util.areEqual(durationMs, that.durationMs)
-        && Util.areEqual(userRating, that.userRating)
-        && Util.areEqual(overallRating, that.overallRating)
+    return Objects.equals(title, that.title)
+        && Objects.equals(artist, that.artist)
+        && Objects.equals(albumTitle, that.albumTitle)
+        && Objects.equals(albumArtist, that.albumArtist)
+        && Objects.equals(displayTitle, that.displayTitle)
+        && Objects.equals(subtitle, that.subtitle)
+        && Objects.equals(description, that.description)
+        && Objects.equals(durationMs, that.durationMs)
+        && Objects.equals(userRating, that.userRating)
+        && Objects.equals(overallRating, that.overallRating)
         && Arrays.equals(artworkData, that.artworkData)
-        && Util.areEqual(artworkDataType, that.artworkDataType)
-        && Util.areEqual(artworkUri, that.artworkUri)
-        && Util.areEqual(trackNumber, that.trackNumber)
-        && Util.areEqual(totalTrackCount, that.totalTrackCount)
-        && Util.areEqual(folderType, that.folderType)
-        && Util.areEqual(isBrowsable, that.isBrowsable)
-        && Util.areEqual(isPlayable, that.isPlayable)
-        && Util.areEqual(recordingYear, that.recordingYear)
-        && Util.areEqual(recordingMonth, that.recordingMonth)
-        && Util.areEqual(recordingDay, that.recordingDay)
-        && Util.areEqual(releaseYear, that.releaseYear)
-        && Util.areEqual(releaseMonth, that.releaseMonth)
-        && Util.areEqual(releaseDay, that.releaseDay)
-        && Util.areEqual(writer, that.writer)
-        && Util.areEqual(composer, that.composer)
-        && Util.areEqual(conductor, that.conductor)
-        && Util.areEqual(discNumber, that.discNumber)
-        && Util.areEqual(totalDiscCount, that.totalDiscCount)
-        && Util.areEqual(genre, that.genre)
-        && Util.areEqual(compilation, that.compilation)
-        && Util.areEqual(station, that.station)
-        && Util.areEqual(mediaType, that.mediaType)
+        && Objects.equals(artworkDataType, that.artworkDataType)
+        && Objects.equals(artworkUri, that.artworkUri)
+        && Objects.equals(trackNumber, that.trackNumber)
+        && Objects.equals(totalTrackCount, that.totalTrackCount)
+        && Objects.equals(folderType, that.folderType)
+        && Objects.equals(isBrowsable, that.isBrowsable)
+        && Objects.equals(isPlayable, that.isPlayable)
+        && Objects.equals(recordingYear, that.recordingYear)
+        && Objects.equals(recordingMonth, that.recordingMonth)
+        && Objects.equals(recordingDay, that.recordingDay)
+        && Objects.equals(releaseYear, that.releaseYear)
+        && Objects.equals(releaseMonth, that.releaseMonth)
+        && Objects.equals(releaseDay, that.releaseDay)
+        && Objects.equals(writer, that.writer)
+        && Objects.equals(composer, that.composer)
+        && Objects.equals(conductor, that.conductor)
+        && Objects.equals(discNumber, that.discNumber)
+        && Objects.equals(totalDiscCount, that.totalDiscCount)
+        && Objects.equals(genre, that.genre)
+        && Objects.equals(compilation, that.compilation)
+        && Objects.equals(station, that.station)
+        && Objects.equals(mediaType, that.mediaType)
+        && Objects.equals(supportedCommands, that.supportedCommands)
         && ((extras == null) == (that.extras == null));
   }
 
   @SuppressWarnings("deprecation") // Hashing deprecated fields.
   @Override
   public int hashCode() {
-    return Objects.hashCode(
+    return Objects.hash(
         title,
         artist,
         albumTitle,
@@ -1267,7 +1295,8 @@ public final class MediaMetadata {
         compilation,
         station,
         mediaType,
-        extras == null);
+        extras == null,
+        supportedCommands);
   }
 
   private static final String FIELD_TITLE = Util.intToStringMaxRadix(0);
@@ -1304,6 +1333,7 @@ public final class MediaMetadata {
   private static final String FIELD_MEDIA_TYPE = Util.intToStringMaxRadix(31);
   private static final String FIELD_IS_BROWSABLE = Util.intToStringMaxRadix(32);
   private static final String FIELD_DURATION_MS = Util.intToStringMaxRadix(33);
+  private static final String FIELD_SUPPORTED_COMMANDS = Util.intToStringMaxRadix(34);
   private static final String FIELD_EXTRAS = Util.intToStringMaxRadix(1000);
 
   @SuppressWarnings("deprecation") // Bundling deprecated fields.
@@ -1409,6 +1439,9 @@ public final class MediaMetadata {
     if (mediaType != null) {
       bundle.putInt(FIELD_MEDIA_TYPE, mediaType);
     }
+    if (!supportedCommands.isEmpty()) {
+      bundle.putStringArrayList(FIELD_SUPPORTED_COMMANDS, new ArrayList<>(supportedCommands));
+    }
     if (extras != null) {
       bundle.putBundle(FIELD_EXTRAS, extras);
     }
@@ -1498,6 +1531,11 @@ public final class MediaMetadata {
     }
     if (bundle.containsKey(FIELD_MEDIA_TYPE)) {
       builder.setMediaType(bundle.getInt(FIELD_MEDIA_TYPE));
+    }
+    @Nullable
+    ArrayList<String> supportedCommands = bundle.getStringArrayList(FIELD_SUPPORTED_COMMANDS);
+    if (supportedCommands != null) {
+      builder.setSupportedCommands(supportedCommands);
     }
 
     return builder.build();

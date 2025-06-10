@@ -39,8 +39,43 @@ public final class HevcConfig {
    * @throws ParserException If an error occurred parsing the data.
    */
   public static HevcConfig parse(ParsableByteArray data) throws ParserException {
+    return parseImpl(data, /* layered= */ false, /* vpsData= */ null);
+  }
+
+  /**
+   * Parses L-HEVC configuration data.
+   *
+   * @param data A {@link ParsableByteArray}, whose position is set to the start of the L-HEVC
+   *     configuration data to parse.
+   * @param vpsData A parsed representation of VPS data.
+   * @return A parsed representation of the L-HEVC configuration data.
+   * @throws ParserException If an error occurred parsing the data.
+   */
+  public static HevcConfig parseLayered(ParsableByteArray data, NalUnitUtil.H265VpsData vpsData)
+      throws ParserException {
+    return parseImpl(data, /* layered= */ true, vpsData);
+  }
+
+  /**
+   * Parses HEVC or L-HEVC configuration data.
+   *
+   * @param data A {@link ParsableByteArray}, whose position is set to the start of the HEVC/L-HEVC
+   *     configuration data to parse.
+   * @param layered A flag indicating whether layered HEVC (L-HEVC) is being parsed or not.
+   * @param vpsData A parsed representation of VPS data or {@code null} if not available.
+   * @return A parsed representation of the HEVC/L-HEVC configuration data.
+   * @throws ParserException If an error occurred parsing the data.
+   */
+  private static HevcConfig parseImpl(
+      ParsableByteArray data, boolean layered, @Nullable NalUnitUtil.H265VpsData vpsData)
+      throws ParserException {
     try {
-      data.skipBytes(21); // Skip to the NAL unit length size field.
+      // Skip to the NAL unit length size field.
+      if (layered) {
+        data.skipBytes(4);
+      } else {
+        data.skipBytes(21);
+      }
       int lengthSizeMinusOne = data.readUnsignedByte() & 0x03;
 
       // Calculate the combined size of all VPS/SPS/PPS bitstreams.
@@ -60,6 +95,7 @@ public final class HevcConfig {
       // Concatenate the codec-specific data into a single buffer.
       data.setPosition(csdStartPosition);
       byte[] buffer = new byte[csdLength];
+      int maxSubLayers = Format.NO_VALUE;
       int bufferPosition = 0;
       int width = Format.NO_VALUE;
       int height = Format.NO_VALUE;
@@ -68,9 +104,11 @@ public final class HevcConfig {
       @C.ColorSpace int colorSpace = Format.NO_VALUE;
       @C.ColorRange int colorRange = Format.NO_VALUE;
       @C.ColorTransfer int colorTransfer = Format.NO_VALUE;
+      @C.StereoMode int stereoMode = Format.NO_VALUE;
       float pixelWidthHeightRatio = 1;
       int maxNumReorderPics = Format.NO_VALUE;
       @Nullable String codecs = null;
+      @Nullable NalUnitUtil.H265VpsData currentVpsData = vpsData;
       for (int i = 0; i < numberOfArrays; i++) {
         int nalUnitType =
             data.readUnsignedByte() & 0x3F; // completeness (1), reserved (1), nal_unit_type (6)
@@ -86,10 +124,15 @@ public final class HevcConfig {
           bufferPosition += NalUnitUtil.NAL_START_CODE.length;
           System.arraycopy(
               data.getData(), data.getPosition(), buffer, bufferPosition, nalUnitLength);
-          if (nalUnitType == SPS_NAL_UNIT_TYPE && j == 0) {
+          if (nalUnitType == NalUnitUtil.H265_NAL_UNIT_TYPE_VPS && j == 0) {
+            currentVpsData =
+                NalUnitUtil.parseH265VpsNalUnit(
+                    buffer, bufferPosition, bufferPosition + nalUnitLength);
+          } else if (nalUnitType == NalUnitUtil.H265_NAL_UNIT_TYPE_SPS && j == 0) {
             NalUnitUtil.H265SpsData spsData =
                 NalUnitUtil.parseH265SpsNalUnit(
-                    buffer, bufferPosition, bufferPosition + nalUnitLength);
+                    buffer, bufferPosition, bufferPosition + nalUnitLength, currentVpsData);
+            maxSubLayers = spsData.maxSubLayersMinus1 + 1;
             width = spsData.width;
             height = spsData.height;
             bitdepthLuma = spsData.bitDepthLumaMinus8 + 8;
@@ -100,14 +143,26 @@ public final class HevcConfig {
             pixelWidthHeightRatio = spsData.pixelWidthHeightRatio;
             maxNumReorderPics = spsData.maxNumReorderPics;
 
-            codecs =
-                CodecSpecificDataUtil.buildHevcCodecString(
-                    spsData.generalProfileSpace,
-                    spsData.generalTierFlag,
-                    spsData.generalProfileIdc,
-                    spsData.generalProfileCompatibilityFlags,
-                    spsData.constraintBytes,
-                    spsData.generalLevelIdc);
+            if (spsData.profileTierLevel != null) {
+              codecs =
+                  CodecSpecificDataUtil.buildHevcCodecString(
+                      spsData.profileTierLevel.generalProfileSpace,
+                      spsData.profileTierLevel.generalTierFlag,
+                      spsData.profileTierLevel.generalProfileIdc,
+                      spsData.profileTierLevel.generalProfileCompatibilityFlags,
+                      spsData.profileTierLevel.constraintBytes,
+                      spsData.profileTierLevel.generalLevelIdc);
+            }
+          } else if (nalUnitType == NalUnitUtil.H265_NAL_UNIT_TYPE_PREFIX_SEI && j == 0) {
+            NalUnitUtil.H265Sei3dRefDisplayInfoData seiData =
+                NalUnitUtil.parseH265Sei3dRefDisplayInfo(
+                    buffer, bufferPosition, bufferPosition + nalUnitLength);
+            if (seiData != null && currentVpsData != null) {
+              stereoMode =
+                  (seiData.leftViewId == currentVpsData.layerInfos.get(0).viewId)
+                      ? C.STEREO_MODE_INTERLEAVED_LEFT_PRIMARY
+                      : C.STEREO_MODE_INTERLEAVED_RIGHT_PRIMARY;
+            }
           }
           bufferPosition += nalUnitLength;
           data.skipBytes(nalUnitLength);
@@ -119,6 +174,7 @@ public final class HevcConfig {
       return new HevcConfig(
           initializationData,
           lengthSizeMinusOne + 1,
+          maxSubLayers,
           width,
           height,
           bitdepthLuma,
@@ -126,15 +182,16 @@ public final class HevcConfig {
           colorSpace,
           colorRange,
           colorTransfer,
+          stereoMode,
           pixelWidthHeightRatio,
           maxNumReorderPics,
-          codecs);
+          codecs,
+          currentVpsData);
     } catch (ArrayIndexOutOfBoundsException e) {
-      throw ParserException.createForMalformedContainer("Error parsing HEVC config", e);
+      throw ParserException.createForMalformedContainer(
+          "Error parsing" + (layered ? "L-HEVC config" : "HEVC config"), e);
     }
   }
-
-  private static final int SPS_NAL_UNIT_TYPE = 33;
 
   /**
    * List of buffers containing the codec-specific data to be provided to the decoder.
@@ -145,6 +202,9 @@ public final class HevcConfig {
 
   /** The length of the NAL unit length field in the bitstream's container, in bytes. */
   public final int nalUnitLengthFieldLength;
+
+  /** The {@code sps_max_sub_layers_minus1 + 1} value: the number of temporal sub-layers. */
+  public final int maxSubLayers;
 
   /** The width of each decoded frame, or {@link Format#NO_VALUE} if unknown. */
   public final int width;
@@ -174,6 +234,11 @@ public final class HevcConfig {
    */
   public final @C.ColorTransfer int colorTransfer;
 
+  /**
+   * The {@link C.StereoMode} of the video or {@link Format#NO_VALUE} if unknown or not applicable.
+   */
+  public final @C.StereoMode int stereoMode;
+
   /** The pixel width to height ratio. */
   public final float pixelWidthHeightRatio;
 
@@ -193,9 +258,13 @@ public final class HevcConfig {
    */
   @Nullable public final String codecs;
 
+  /** The parsed representation of VPS data or {@code null} if not available. */
+  @Nullable public final NalUnitUtil.H265VpsData vpsData;
+
   private HevcConfig(
       List<byte[]> initializationData,
       int nalUnitLengthFieldLength,
+      int maxSubLayers,
       int width,
       int height,
       int bitdepthLuma,
@@ -203,11 +272,14 @@ public final class HevcConfig {
       @C.ColorSpace int colorSpace,
       @C.ColorRange int colorRange,
       @C.ColorTransfer int colorTransfer,
+      @C.StereoMode int stereoMode,
       float pixelWidthHeightRatio,
       int maxNumReorderPics,
-      @Nullable String codecs) {
+      @Nullable String codecs,
+      @Nullable NalUnitUtil.H265VpsData vpsData) {
     this.initializationData = initializationData;
     this.nalUnitLengthFieldLength = nalUnitLengthFieldLength;
+    this.maxSubLayers = maxSubLayers;
     this.width = width;
     this.height = height;
     this.bitdepthLuma = bitdepthLuma;
@@ -215,8 +287,10 @@ public final class HevcConfig {
     this.colorSpace = colorSpace;
     this.colorRange = colorRange;
     this.colorTransfer = colorTransfer;
+    this.stereoMode = stereoMode;
     this.pixelWidthHeightRatio = pixelWidthHeightRatio;
     this.maxNumReorderPics = maxNumReorderPics;
     this.codecs = codecs;
+    this.vpsData = vpsData;
   }
 }

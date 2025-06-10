@@ -32,7 +32,6 @@ import androidx.media3.exoplayer.source.TrackGroupArray;
 import androidx.media3.exoplayer.trackselection.ExoTrackSelection;
 import androidx.media3.exoplayer.trackselection.FixedTrackSelection;
 import androidx.media3.exoplayer.upstream.DefaultAllocator;
-import androidx.media3.test.utils.FakeRenderer;
 import androidx.media3.test.utils.FakeTimeline;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import org.junit.Before;
@@ -59,10 +58,7 @@ public class DefaultLoadControlTest {
   public void setUp() throws Exception {
     builder = new Builder();
     allocator = new DefaultAllocator(true, C.DEFAULT_BUFFER_SEGMENT_SIZE);
-    playerId =
-        Util.SDK_INT < 31
-            ? new PlayerId(/* playerName= */ "")
-            : new PlayerId(/* logSessionId= */ null, /* playerName= */ "");
+    playerId = new PlayerId(/* playerName= */ "");
     timeline =
         new SinglePeriodTimeline(
             /* durationUs= */ 10_000_000L,
@@ -90,7 +86,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -103,7 +100,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -116,7 +114,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
   }
 
@@ -146,7 +145,8 @@ public class DefaultLoadControlTest {
             SPEED,
             /* playWhenReady= */ false,
             /* rebuffering= */ false,
-            /* targetLiveOffsetUs= */ C.TIME_UNSET));
+            /* targetLiveOffsetUs= */ C.TIME_UNSET,
+            /* lastRebufferRealtimeMs= */ C.TIME_UNSET));
     // Second player fell below min size and starts loading until max size is reached.
     loadControl.shouldContinueLoading(
         new LoadControl.Parameters(
@@ -158,7 +158,8 @@ public class DefaultLoadControlTest {
             SPEED,
             /* playWhenReady= */ false,
             /* rebuffering= */ false,
-            /* targetLiveOffsetUs= */ C.TIME_UNSET));
+            /* targetLiveOffsetUs= */ C.TIME_UNSET,
+            /* lastRebufferRealtimeMs= */ C.TIME_UNSET));
 
     assertThat(
             loadControl.shouldContinueLoading(
@@ -171,7 +172,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -184,7 +186,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -197,7 +200,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -210,7 +214,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -234,7 +239,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -247,7 +253,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -260,7 +267,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -273,7 +281,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -297,7 +306,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -310,7 +320,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -323,7 +334,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -349,7 +361,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -362,7 +375,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -375,7 +389,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -388,7 +403,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
   }
 
@@ -410,7 +426,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
     makeSureTargetBufferBytesReached();
 
@@ -425,7 +442,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -438,7 +456,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -451,7 +470,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldContinueLoading(
@@ -464,7 +484,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
   }
 
@@ -489,7 +510,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     // At double playback speed, we continue loading.
     assertThat(
@@ -503,7 +525,8 @@ public class DefaultLoadControlTest {
                     /* playbackSpeed= */ 2f,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -512,10 +535,17 @@ public class DefaultLoadControlTest {
     loadControl = builder.build();
     loadControl.onPrepared(playerId);
     loadControl.onTracksSelected(
-        playerId,
-        timeline,
-        mediaPeriodId,
-        new Renderer[0],
+        new LoadControl.Parameters(
+            playerId,
+            timeline,
+            mediaPeriodId,
+            /* playbackPositionUs= */ 0L,
+            /* bufferedDurationUs= */ 0L,
+            /* playbackSpeed= */ 1f,
+            /* playWhenReady= */ false,
+            /* rebuffering= */ false,
+            /* targetLiveOffsetUs= */ C.TIME_UNSET,
+            /* lastRebufferRealtimeMs= */ C.TIME_UNSET),
         TrackGroupArray.EMPTY,
         new ExoTrackSelection[0]);
 
@@ -530,7 +560,8 @@ public class DefaultLoadControlTest {
                     /* playbackSpeed= */ 1f,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -549,7 +580,8 @@ public class DefaultLoadControlTest {
                     /* playbackSpeed= */ 100f,
                     /* playWhenReady= */ false,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
   }
 
@@ -568,7 +600,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -593,7 +626,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldStartPlayback(
@@ -606,7 +640,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ false,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -630,7 +665,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ true,
-                    /* targetLiveOffsetUs= */ 1_000_000L)))
+                    /* targetLiveOffsetUs= */ 1_000_000L,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldStartPlayback(
@@ -643,7 +679,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ true,
-                    /* targetLiveOffsetUs= */ 1_000_000L)))
+                    /* targetLiveOffsetUs= */ 1_000_000L,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -668,7 +705,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ true,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldStartPlayback(
@@ -681,7 +719,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ true,
-                    /* targetLiveOffsetUs= */ C.TIME_UNSET)))
+                    /* targetLiveOffsetUs= */ C.TIME_UNSET,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -705,7 +744,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ true,
-                    /* targetLiveOffsetUs= */ 1_000_000L)))
+                    /* targetLiveOffsetUs= */ 1_000_000L,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isFalse();
     assertThat(
             loadControl.shouldStartPlayback(
@@ -718,7 +758,8 @@ public class DefaultLoadControlTest {
                     SPEED,
                     /* playWhenReady= */ true,
                     /* rebuffering= */ true,
-                    /* targetLiveOffsetUs= */ 1_000_000L)))
+                    /* targetLiveOffsetUs= */ 1_000_000L,
+                    /* lastRebufferRealtimeMs= */ C.TIME_UNSET)))
         .isTrue();
   }
 
@@ -747,24 +788,36 @@ public class DefaultLoadControlTest {
     TrackGroup videoTrackGroup =
         new TrackGroup(new Format.Builder().setSampleMimeType(MimeTypes.VIDEO_H264).build());
     TrackGroupArray videoTrackGroupArray = new TrackGroupArray(videoTrackGroup);
-    Renderer[] videoRenderer = new Renderer[] {new FakeRenderer(C.TRACK_TYPE_VIDEO)};
     TrackGroup audioTrackGroup =
         new TrackGroup(new Format.Builder().setSampleMimeType(MimeTypes.AUDIO_AAC).build());
     TrackGroupArray audioTrackGroupArray = new TrackGroupArray(audioTrackGroup);
-    Renderer[] audioRenderer = new Renderer[] {new FakeRenderer(C.TRACK_TYPE_AUDIO)};
 
     loadControl.onTracksSelected(
-        playerId,
-        timeline,
-        mediaPeriodId,
-        videoRenderer,
+        new LoadControl.Parameters(
+            playerId,
+            timeline,
+            mediaPeriodId,
+            /* playbackPositionUs= */ 0,
+            /* bufferedDurationUs= */ 0,
+            /* playbackSpeed= */ 1.0f,
+            /* playWhenReady= */ false,
+            /* rebuffering= */ false,
+            /* targetLiveOffsetUs= */ C.TIME_UNSET,
+            /* lastRebufferRealtimeMs= */ C.TIME_UNSET),
         videoTrackGroupArray,
         new ExoTrackSelection[] {new FixedTrackSelection(videoTrackGroup, /* track= */ 0)});
     loadControl.onTracksSelected(
-        playerId2,
-        timeline2,
-        mediaPeriodId2,
-        audioRenderer,
+        new LoadControl.Parameters(
+            playerId2,
+            timeline2,
+            mediaPeriodId2,
+            /* playbackPositionUs= */ 0,
+            /* bufferedDurationUs= */ 0,
+            /* playbackSpeed= */ 1.0f,
+            /* playWhenReady= */ false,
+            /* rebuffering= */ false,
+            /* targetLiveOffsetUs= */ C.TIME_UNSET,
+            /* lastRebufferRealtimeMs= */ C.TIME_UNSET),
         audioTrackGroupArray,
         new ExoTrackSelection[] {new FixedTrackSelection(audioTrackGroup, /* track= */ 0)});
 
@@ -796,10 +849,17 @@ public class DefaultLoadControlTest {
     loadControl = builder.build();
     loadControl.onPrepared(playerId);
     loadControl.onTracksSelected(
-        playerId,
-        timeline,
-        mediaPeriodId,
-        new Renderer[0],
+        new LoadControl.Parameters(
+            playerId,
+            timeline,
+            mediaPeriodId,
+            /* playbackPositionUs= */ 0,
+            /* bufferedDurationUs= */ 0,
+            /* playbackSpeed= */ 1.0f,
+            /* playWhenReady= */ false,
+            /* rebuffering= */ false,
+            /* targetLiveOffsetUs= */ C.TIME_UNSET,
+            C.TIME_UNSET),
         /* trackGroups= */ null,
         /* trackSelections= */ null);
   }

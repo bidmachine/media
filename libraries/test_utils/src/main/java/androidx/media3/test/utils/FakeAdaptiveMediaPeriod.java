@@ -116,7 +116,8 @@ public class FakeAdaptiveMediaPeriod
         C.SELECTION_REASON_UNKNOWN,
         /* trackSelectionData= */ null,
         /* mediaStartTimeUs= */ 0,
-        /* mediaEndTimeUs= */ C.TIME_UNSET);
+        /* mediaEndTimeUs= */ C.TIME_UNSET,
+        /* retryCount= */ 0);
     this.callback = callback;
     prepared = true;
     Util.castNonNull(this.callback).onPrepared(this);
@@ -187,7 +188,9 @@ public class FakeAdaptiveMediaPeriod
                 DrmSessionManager.DRM_UNSUPPORTED,
                 new DrmSessionEventListener.EventDispatcher(),
                 new DefaultLoadErrorHandlingPolicy(/* minimumLoadableRetryCount= */ 3),
-                mediaSourceEventDispatcher);
+                mediaSourceEventDispatcher,
+                /* canReportInitialDiscontinuity= */ false,
+                /* downloadExecutor= */ null);
         streams[i] = sampleStream;
         sampleStreams.add(sampleStream);
         streamResetFlags[i] = true;

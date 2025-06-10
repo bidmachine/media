@@ -15,10 +15,13 @@
  */
 package androidx.media3.exoplayer;
 
+import android.os.SystemClock;
 import androidx.media3.common.C;
 import androidx.media3.common.Player;
 import androidx.media3.common.Timeline;
 import androidx.media3.common.TrackGroup;
+import androidx.media3.common.util.Log;
+import androidx.media3.common.util.NullableType;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.exoplayer.analytics.PlayerId;
 import androidx.media3.exoplayer.source.MediaPeriod;
@@ -79,6 +82,18 @@ public interface LoadControl {
     public final long targetLiveOffsetUs;
 
     /**
+     * Sets the time at which the last rebuffering occurred, in milliseconds since boot including
+     * time spent in sleep.
+     *
+     * <p>The time base used is the same as that measured by {@link SystemClock#elapsedRealtime}.
+     *
+     * <p><b>Note:</b> If rebuffer events are not known when the load is started or continued, or if
+     * no rebuffering has occurred, or if there have been any user interactions such as seeking or
+     * stopping the player, the value will be set to {@link C#TIME_UNSET}.
+     */
+    public final long lastRebufferRealtimeMs;
+
+    /**
      * Creates parameters for {@link LoadControl} methods.
      *
      * @param playerId See {@link #playerId}.
@@ -90,6 +105,7 @@ public interface LoadControl {
      * @param playWhenReady See {@link #playWhenReady}.
      * @param rebuffering See {@link #rebuffering}.
      * @param targetLiveOffsetUs See {@link #targetLiveOffsetUs}.
+     * @param lastRebufferRealtimeMs see {@link #lastRebufferRealtimeMs}
      */
     public Parameters(
         PlayerId playerId,
@@ -100,7 +116,8 @@ public interface LoadControl {
         float playbackSpeed,
         boolean playWhenReady,
         boolean rebuffering,
-        long targetLiveOffsetUs) {
+        long targetLiveOffsetUs,
+        long lastRebufferRealtimeMs) {
       this.playerId = playerId;
       this.timeline = timeline;
       this.mediaPeriodId = mediaPeriodId;
@@ -110,6 +127,7 @@ public interface LoadControl {
       this.playWhenReady = playWhenReady;
       this.rebuffering = rebuffering;
       this.targetLiveOffsetUs = targetLiveOffsetUs;
+      this.lastRebufferRealtimeMs = lastRebufferRealtimeMs;
     }
   }
 
@@ -144,28 +162,40 @@ public interface LoadControl {
   /**
    * Called by the player when a track selection occurs.
    *
-   * @param playerId The {@linkplain PlayerId ID of the player} that selected tracks.
-   * @param timeline The current {@link Timeline} in ExoPlayer.
-   * @param mediaPeriodId Identifies (in the current timeline) the {@link MediaPeriod} for which the
-   *     selection was made. Will be {@link #EMPTY_MEDIA_PERIOD_ID} when {@code timeline} is empty.
-   * @param renderers The renderers.
+   * @param parameters containing the {@linkplain PlayerId ID of the player}, the current {@link
+   *     Timeline} in ExoPlayer, and the {@link MediaPeriod} for which the selection was made. Will
+   *     be {@link #EMPTY_MEDIA_PERIOD_ID} when {@code timeline} is empty.
    * @param trackGroups The {@link TrackGroup}s from which the selection was made.
    * @param trackSelections The track selections that were made.
    */
+  default void onTracksSelected(
+      Parameters parameters,
+      TrackGroupArray trackGroups,
+      @NullableType ExoTrackSelection[] trackSelections) {
+    // Media3 ExoPlayer will never call this method. This default implementation provides an
+    // implementation to please the compiler only.
+    throw new IllegalStateException("onTracksSelected not implemented");
+  }
+
+  /**
+   * @deprecated Implement {@link #onTracksSelected(Parameters, TrackGroupArray,
+   *     ExoTrackSelection[])} instead.
+   */
   @SuppressWarnings("deprecation") // Calling deprecated version of this method.
+  @Deprecated
   default void onTracksSelected(
       PlayerId playerId,
       Timeline timeline,
       MediaPeriodId mediaPeriodId,
       Renderer[] renderers,
       TrackGroupArray trackGroups,
-      ExoTrackSelection[] trackSelections) {
+      @NullableType ExoTrackSelection[] trackSelections) {
     onTracksSelected(timeline, mediaPeriodId, renderers, trackGroups, trackSelections);
   }
 
   /**
-   * @deprecated Implement {@link #onTracksSelected(PlayerId, Timeline, MediaPeriodId, Renderer[],
-   *     TrackGroupArray, ExoTrackSelection[])} instead.
+   * @deprecated Implement {@link #onTracksSelected(Parameters, TrackGroupArray,
+   *     ExoTrackSelection[])} instead.
    */
   @SuppressWarnings("deprecation") // Calling deprecated version of this method.
   @Deprecated
@@ -174,18 +204,20 @@ public interface LoadControl {
       MediaPeriodId mediaPeriodId,
       Renderer[] renderers,
       TrackGroupArray trackGroups,
-      ExoTrackSelection[] trackSelections) {
+      @NullableType ExoTrackSelection[] trackSelections) {
     onTracksSelected(renderers, trackGroups, trackSelections);
   }
 
   /**
-   * @deprecated Implement {@link #onTracksSelected(PlayerId, Timeline, MediaPeriodId, Renderer[],
-   *     TrackGroupArray, ExoTrackSelection[])} instead.
+   * @deprecated Implement {@link #onTracksSelected(Parameters, TrackGroupArray,
+   *     ExoTrackSelection[])} instead.
    */
   @SuppressWarnings("deprecation") // Calling deprecated version of this method.
   @Deprecated
   default void onTracksSelected(
-      Renderer[] renderers, TrackGroupArray trackGroups, ExoTrackSelection[] trackSelections) {
+      Renderer[] renderers,
+      TrackGroupArray trackGroups,
+      @NullableType ExoTrackSelection[] trackSelections) {
     // Media3 ExoPlayer will never call this method. This default implementation provides an
     // implementation to please the compiler only.
     throw new IllegalStateException("onTracksSelected not implemented");
@@ -322,6 +354,24 @@ public interface LoadControl {
     // Media3 ExoPlayer will never call this method. This default implementation provides an
     // implementation to please the compiler only.
     throw new IllegalStateException("shouldContinueLoading not implemented");
+  }
+
+  /**
+   * Called to determine whether preloading should be continued. If this method returns true, the
+   * presented period will continue to load media.
+   *
+   * @param timeline The Timeline containing the preload period that can be looked up with
+   *     MediaPeriodId.periodUid.
+   * @param mediaPeriodId The MediaPeriodId of the preloading period.
+   * @param bufferedDurationUs The duration of media currently buffered by the preload period.
+   * @return Whether the preloading should continue for the given period.
+   */
+  default boolean shouldContinuePreloading(
+      Timeline timeline, MediaPeriodId mediaPeriodId, long bufferedDurationUs) {
+    Log.w(
+        "LoadControl",
+        "shouldContinuePreloading needs to be implemented when playlist preloading is enabled");
+    return false;
   }
 
   /**

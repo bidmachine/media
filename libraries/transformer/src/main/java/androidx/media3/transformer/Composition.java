@@ -21,9 +21,9 @@ import static java.lang.annotation.RetentionPolicy.SOURCE;
 
 import androidx.annotation.IntDef;
 import androidx.media3.common.MediaItem;
+import androidx.media3.common.VideoCompositorSettings;
 import androidx.media3.common.audio.AudioProcessor;
 import androidx.media3.common.util.UnstableApi;
-import androidx.media3.effect.VideoCompositorSettings;
 import com.google.common.collect.ImmutableList;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.lang.annotation.Documented;
@@ -110,8 +110,6 @@ public final class Composition {
      * Sets the {@link Effects} to apply to the {@link Composition}.
      *
      * <p>The default value is {@link Effects#EMPTY}.
-     *
-     * <p>This only works with the {@code Presentation} effect.
      *
      * @param effects The {@link Composition} {@link Effects}.
      * @return This builder.
@@ -441,5 +439,18 @@ public final class Composition {
     this.forceAudioTrack = forceAudioTrack;
     this.hdrMode = hdrMode;
     this.retainHdrFromUltraHdrImage = retainHdrFromUltraHdrImage;
+  }
+
+  /**
+   * Return whether any {@linkplain EditedMediaItemSequence sequences} contain a {@linkplain
+   * EditedMediaItemSequence.Builder#addGap(long) gap}.
+   */
+  /* package */ boolean hasGaps() {
+    for (int i = 0; i < sequences.size(); i++) {
+      if (sequences.get(i).hasGaps()) {
+        return true;
+      }
+    }
+    return false;
   }
 }

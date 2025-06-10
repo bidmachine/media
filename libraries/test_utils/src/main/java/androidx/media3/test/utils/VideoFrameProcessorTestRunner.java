@@ -38,7 +38,7 @@ import androidx.annotation.Nullable;
 import androidx.media3.common.ColorInfo;
 import androidx.media3.common.DebugViewProvider;
 import androidx.media3.common.Effect;
-import androidx.media3.common.FrameInfo;
+import androidx.media3.common.Format;
 import androidx.media3.common.GlTextureInfo;
 import androidx.media3.common.SurfaceInfo;
 import androidx.media3.common.VideoFrameProcessingException;
@@ -221,7 +221,9 @@ public final class VideoFrameProcessorTestRunner {
       return new VideoFrameProcessorTestRunner(
           testId,
           videoFrameProcessorFactory,
-          bitmapReader == null ? new SurfaceBitmapReader() : bitmapReader,
+          bitmapReader == null
+              ? new SurfaceBitmapReader(/* releaseOutputSurface= */ false)
+              : bitmapReader,
           videoAssetPath,
           outputFileLabel == null ? "" : outputFileLabel,
           effects == null ? ImmutableList.of() : effects,
@@ -281,14 +283,19 @@ public final class VideoFrameProcessorTestRunner {
               @Override
               public void onInputStreamRegistered(
                   @VideoFrameProcessor.InputType int inputType,
-                  List<Effect> effects,
-                  FrameInfo frameInfo) {
+                  Format format,
+                  List<Effect> effects) {
                 videoFrameProcessorReadyCondition.open();
               }
 
               @Override
               public void onOutputSizeChanged(int width, int height) {
                 boolean useHighPrecisionColorComponents = ColorInfo.isTransferHdr(outputColorInfo);
+                if (bitmapReader instanceof SurfaceBitmapReader) {
+                  if (((SurfaceBitmapReader) bitmapReader).releaseOutputSurface) {
+                    checkNotNull(videoFrameProcessor).setOutputSurfaceInfo(null);
+                  }
+                }
                 @Nullable
                 Surface outputSurface =
                     bitmapReader.getSurface(width, height, useHighPrecisionColorComponents);
@@ -321,6 +328,7 @@ public final class VideoFrameProcessorTestRunner {
     this.effects = effects;
   }
 
+  @SuppressLint("InlinedApi") // Inlined MediaFormat keys.
   public void processFirstFrameAndEnd() throws Exception {
     DecodeOneFrameUtil.decodeOneAssetFileFrame(
         checkNotNull(videoAssetPath),
@@ -329,15 +337,26 @@ public final class VideoFrameProcessorTestRunner {
           public void onContainerExtracted(MediaFormat mediaFormat) {
             videoFrameProcessorReadyCondition.close();
             @Nullable ColorInfo colorInfo = MediaFormatUtil.getColorInfo(mediaFormat);
+            int rotationDegrees =
+                MediaFormatUtil.getInteger(
+                    mediaFormat, MediaFormat.KEY_ROTATION, /* defaultValue= */ 0);
+            int width = mediaFormat.getInteger(MediaFormat.KEY_WIDTH);
+            int height = mediaFormat.getInteger(MediaFormat.KEY_HEIGHT);
+            if (rotationDegrees % 180 == 90) {
+              int tmp = width;
+              width = height;
+              height = tmp;
+            }
             videoFrameProcessor.registerInputStream(
                 INPUT_TYPE_SURFACE,
-                effects,
-                new FrameInfo.Builder(
-                        colorInfo == null ? ColorInfo.SDR_BT709_LIMITED : colorInfo,
-                        mediaFormat.getInteger(MediaFormat.KEY_WIDTH),
-                        mediaFormat.getInteger(MediaFormat.KEY_HEIGHT))
+                new Format.Builder()
+                    .setColorInfo(colorInfo == null ? ColorInfo.SDR_BT709_LIMITED : colorInfo)
+                    .setWidth(width)
+                    .setHeight(height)
                     .setPixelWidthHeightRatio(pixelWidthHeightRatio)
-                    .build());
+                    .build(),
+                effects,
+                /* offsetToAddUs= */ 0);
             try {
               awaitVideoFrameProcessorReady();
             } catch (VideoFrameProcessingException e) {
@@ -367,11 +386,14 @@ public final class VideoFrameProcessorTestRunner {
     videoFrameProcessorReadyCondition.close();
     videoFrameProcessor.registerInputStream(
         INPUT_TYPE_BITMAP,
-        effects,
-        new FrameInfo.Builder(colorInfo, inputBitmap.getWidth(), inputBitmap.getHeight())
+        new Format.Builder()
+            .setColorInfo(colorInfo)
+            .setWidth(inputBitmap.getWidth())
+            .setHeight(inputBitmap.getHeight())
             .setPixelWidthHeightRatio(pixelWidthHeightRatio)
-            .setOffsetToAddUs(offsetToAddUs)
-            .build());
+            .build(),
+        effects,
+        offsetToAddUs);
     awaitVideoFrameProcessorReady();
     checkState(
         videoFrameProcessor.queueInputBitmap(
@@ -389,10 +411,14 @@ public final class VideoFrameProcessorTestRunner {
     videoFrameProcessorReadyCondition.close();
     videoFrameProcessor.registerInputStream(
         INPUT_TYPE_BITMAP,
-        effects,
-        new FrameInfo.Builder(colorInfo, width, height)
+        new Format.Builder()
+            .setColorInfo(colorInfo)
+            .setWidth(width)
+            .setHeight(height)
             .setPixelWidthHeightRatio(pixelWidthHeightRatio)
-            .build());
+            .build(),
+        effects,
+        /* offsetToAddUs= */ 0);
     awaitVideoFrameProcessorReady();
     for (Pair<Bitmap, TimestampIterator> frame : frames) {
       videoFrameProcessor.queueInputBitmap(frame.first, frame.second);
@@ -403,10 +429,14 @@ public final class VideoFrameProcessorTestRunner {
       throws VideoFrameProcessingException {
     videoFrameProcessor.registerInputStream(
         INPUT_TYPE_TEXTURE_ID,
-        effects,
-        new FrameInfo.Builder(colorInfo, inputTexture.width, inputTexture.height)
+        new Format.Builder()
+            .setColorInfo(colorInfo)
+            .setWidth(inputTexture.width)
+            .setHeight(inputTexture.height)
             .setPixelWidthHeightRatio(pixelWidthHeightRatio)
-            .build());
+            .build(),
+        effects,
+        /* offsetToAddUs= */ 0);
     videoFrameProcessor.setOnInputFrameProcessedListener(
         (texId, syncObject) -> {
           try {
@@ -515,6 +545,18 @@ public final class VideoFrameProcessorTestRunner {
   public static final class SurfaceBitmapReader
       implements VideoFrameProcessorTestRunner.BitmapReader {
 
+    public final boolean releaseOutputSurface;
+
+    /**
+     * Creates an instance.
+     *
+     * @param releaseOutputSurface Whether the {@link VideoFrameProcessor} output Surface must be
+     *     released at calls to {@link #getSurface(int, int, boolean)}.
+     */
+    public SurfaceBitmapReader(boolean releaseOutputSurface) {
+      this.releaseOutputSurface = releaseOutputSurface;
+    }
+
     // ImageReader only supports SDR input.
     private @MonotonicNonNull ImageReader imageReader;
 
@@ -522,6 +564,9 @@ public final class VideoFrameProcessorTestRunner {
     @SuppressLint("WrongConstant")
     @Nullable
     public Surface getSurface(int width, int height, boolean useHighPrecisionColorComponents) {
+      if (imageReader != null && releaseOutputSurface) {
+        imageReader.close();
+      }
       imageReader =
           ImageReader.newInstance(width, height, PixelFormat.RGBA_8888, /* maxImages= */ 1);
       return imageReader.getSurface();

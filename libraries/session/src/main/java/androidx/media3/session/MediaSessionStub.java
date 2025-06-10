@@ -60,6 +60,7 @@ import static androidx.media3.session.SessionError.ERROR_UNKNOWN;
 import static androidx.media3.session.SessionError.INFO_CANCELLED;
 
 import android.app.PendingIntent;
+import android.media.session.MediaSession.Token;
 import android.os.Binder;
 import android.os.Bundle;
 import android.os.IBinder;
@@ -103,6 +104,7 @@ import java.lang.ref.WeakReference;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
@@ -521,6 +523,8 @@ import java.util.concurrent.ExecutionException;
             PlayerWrapper playerWrapper = sessionImpl.getPlayerWrapper();
             PlayerInfo playerInfo = playerWrapper.createPlayerInfoForBundling();
             playerInfo = generateAndCacheUniqueTrackGroupIds(playerInfo);
+            Token platformToken =
+                (Token) sessionImpl.getSessionCompat().getSessionToken().getToken();
             ConnectionState state =
                 new ConnectionState(
                     MediaLibraryInfo.VERSION_INT,
@@ -532,6 +536,10 @@ import java.util.concurrent.ExecutionException;
                     connectionResult.customLayout != null
                         ? connectionResult.customLayout
                         : sessionImpl.getCustomLayout(),
+                    connectionResult.mediaButtonPreferences != null
+                        ? connectionResult.mediaButtonPreferences
+                        : sessionImpl.getMediaButtonPreferences(),
+                    sessionImpl.getCommandButtonsForMediaItems(),
                     connectionResult.availableSessionCommands,
                     connectionResult.availablePlayerCommands,
                     playerWrapper.getAvailableCommands(),
@@ -539,7 +547,8 @@ import java.util.concurrent.ExecutionException;
                     connectionResult.sessionExtras != null
                         ? connectionResult.sessionExtras
                         : sessionImpl.getSessionExtras(),
-                    playerInfo);
+                    playerInfo,
+                    platformToken);
 
             // Double check if session is still there, because release() can be called in
             // another thread.
@@ -631,8 +640,9 @@ import java.util.concurrent.ExecutionException;
               request.libraryVersion,
               request.controllerInterfaceVersion,
               sessionManager.isTrustedForMediaControl(remoteUserInfo),
-              new MediaSessionStub.Controller2Cb(caller),
-              request.connectionHints);
+              new MediaSessionStub.Controller2Cb(caller, request.controllerInterfaceVersion),
+              request.connectionHints,
+              request.maxCommandsForMediaItems);
       connect(caller, controllerInfo);
     } finally {
       Binder.restoreCallingIdentity(token);
@@ -2000,9 +2010,11 @@ import java.util.concurrent.ExecutionException;
   /* package */ static final class Controller2Cb implements ControllerCb {
 
     private final IMediaController iController;
+    private final int controllerInterfaceVersion;
 
-    public Controller2Cb(IMediaController callback) {
-      iController = callback;
+    public Controller2Cb(IMediaController callback, int controllerInterfaceVersion) {
+      this.iController = callback;
+      this.controllerInterfaceVersion = controllerInterfaceVersion;
     }
 
     public IBinder getCallbackBinder() {
@@ -2026,8 +2038,7 @@ import java.util.concurrent.ExecutionException;
         PlayerInfo playerInfo,
         Player.Commands availableCommands,
         boolean excludeTimeline,
-        boolean excludeTracks,
-        int controllerInterfaceVersion)
+        boolean excludeTracks)
         throws RemoteException {
       Assertions.checkState(controllerInterfaceVersion != 0);
       // The bundling exclusions merge the performance overrides with the available commands.
@@ -2067,8 +2078,31 @@ import java.util.concurrent.ExecutionException;
     }
 
     @Override
-    public void onSessionActivityChanged(int sequenceNumber, PendingIntent sessionActivity)
-        throws RemoteException {
+    public void setMediaButtonPreferences(
+        int sequenceNumber, List<CommandButton> mediaButtonPreferences) throws RemoteException {
+      if (controllerInterfaceVersion >= 7) {
+        iController.onSetMediaButtonPreferences(
+            sequenceNumber,
+            BundleCollectionUtil.toBundleList(mediaButtonPreferences, CommandButton::toBundle));
+      } else {
+        // Controller doesn't support media button preferences, send the list as a custom layout.
+        // TODO: b/332877990 - Improve this logic to take allowed command and session extras for
+        //  this controller into account instead of assuming all slots are allowed.
+        ImmutableList<CommandButton> customLayout =
+            CommandButton.getCustomLayoutFromMediaButtonPreferences(
+                mediaButtonPreferences,
+                /* backSlotAllowed= */ true,
+                /* forwardSlotAllowed= */ true);
+        iController.onSetCustomLayout(
+            sequenceNumber,
+            BundleCollectionUtil.toBundleList(customLayout, CommandButton::toBundle));
+      }
+    }
+
+    @SuppressWarnings("nullness:argument") // sessionActivity can be null.
+    @Override
+    public void onSessionActivityChanged(
+        int sequenceNumber, @Nullable PendingIntent sessionActivity) throws RemoteException {
       iController.onSessionActivityChanged(sequenceNumber, sessionActivity);
     }
 
@@ -2161,7 +2195,7 @@ import java.util.concurrent.ExecutionException;
         return false;
       }
       Controller2Cb other = (Controller2Cb) obj;
-      return Util.areEqual(getCallbackBinder(), other.getCallbackBinder());
+      return Objects.equals(getCallbackBinder(), other.getCallbackBinder());
     }
   }
 }

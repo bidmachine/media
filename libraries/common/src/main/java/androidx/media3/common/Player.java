@@ -37,7 +37,6 @@ import androidx.media3.common.text.CueGroup;
 import androidx.media3.common.util.Size;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
-import com.google.common.base.Objects;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
@@ -45,6 +44,7 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * A media player interface defining high-level functionality, such as the ability to play, pause,
@@ -352,13 +352,13 @@ public interface Player {
       }
       PositionInfo that = (PositionInfo) o;
       return equalsForBundling(that)
-          && Objects.equal(windowUid, that.windowUid)
-          && Objects.equal(periodUid, that.periodUid);
+          && Objects.equals(windowUid, that.windowUid)
+          && Objects.equals(periodUid, that.periodUid);
     }
 
     @Override
     public int hashCode() {
-      return Objects.hashCode(
+      return Objects.hash(
           windowUid,
           mediaItemIndex,
           mediaItem,
@@ -382,7 +382,7 @@ public interface Player {
           && contentPositionMs == other.contentPositionMs
           && adGroupIndex == other.adGroupIndex
           && adIndexInAdGroup == other.adIndexInAdGroup
-          && Objects.equal(mediaItem, other.mediaItem);
+          && Objects.equals(mediaItem, other.mediaItem);
     }
 
     @VisibleForTesting static final String FIELD_MEDIA_ITEM_INDEX = Util.intToStringMaxRadix(0);
@@ -1613,7 +1613,7 @@ public interface Player {
   /** {@link #getDeviceInfo()} changed. */
   int EVENT_DEVICE_INFO_CHANGED = 29;
 
-  /** {@link #getDeviceVolume()} changed. */
+  /** {@link #getDeviceVolume()} or {@link #isDeviceMuted()} changed. */
   int EVENT_DEVICE_VOLUME_CHANGED = 30;
 
   /**
@@ -2636,20 +2636,6 @@ public interface Player {
   void seekForward();
 
   /**
-   * @deprecated Use {@link #hasPreviousMediaItem()} instead.
-   */
-  @UnstableApi
-  @Deprecated
-  boolean hasPrevious();
-
-  /**
-   * @deprecated Use {@link #hasPreviousMediaItem()} instead.
-   */
-  @UnstableApi
-  @Deprecated
-  boolean hasPreviousWindow();
-
-  /**
    * Returns whether a previous media item exists, which may depend on the current repeat mode and
    * whether shuffle mode is enabled.
    *
@@ -2661,13 +2647,6 @@ public interface Player {
    * #getAvailableCommands() available}.
    */
   boolean hasPreviousMediaItem();
-
-  /**
-   * @deprecated Use {@link #seekToPreviousMediaItem()} instead.
-   */
-  @UnstableApi
-  @Deprecated
-  void previous();
 
   /**
    * @deprecated Use {@link #seekToPreviousMediaItem()} instead.
@@ -2876,7 +2855,6 @@ public interface Player {
    */
   TrackSelectionParameters getTrackSelectionParameters();
 
-  // LINT.IfChange(set_track_selection_parameters)
   /**
    * Sets the parameters constraining the track selection.
    *
@@ -3405,8 +3383,7 @@ public interface Player {
    *
    * <p>For devices with {@link DeviceInfo#PLAYBACK_TYPE_LOCAL local playback}, the volume returned
    * by this method varies according to the current {@link C.StreamType stream type}. The stream
-   * type is determined by {@link AudioAttributes#usage} which can be converted to stream type with
-   * {@link Util#getStreamTypeForAudioUsage(int)}.
+   * type is determined by {@link AudioAttributes#getStreamType()}.
    *
    * <p>For devices with {@link DeviceInfo#PLAYBACK_TYPE_REMOTE remote playback}, the volume of the
    * remote device is returned.
@@ -3528,10 +3505,6 @@ public interface Player {
    *
    * <p>If tunneling is enabled by the track selector, the specified audio attributes will be
    * ignored, but they will take effect if audio is later played without tunneling.
-   *
-   * <p>If the device is running a build before platform API version 21, audio attributes cannot be
-   * set directly on the underlying audio track. In this case, the usage will be mapped onto an
-   * equivalent stream type using {@link Util#getStreamTypeForAudioUsage(int)}.
    *
    * <p>If audio focus should be handled, the {@link AudioAttributes#usage} must be {@link
    * C#USAGE_MEDIA} or {@link C#USAGE_GAME}. Other usages will throw an {@link

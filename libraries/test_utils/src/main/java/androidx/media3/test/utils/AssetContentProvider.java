@@ -29,7 +29,6 @@ import android.system.ErrnoException;
 import android.system.OsConstants;
 import androidx.annotation.Nullable;
 import androidx.media3.common.util.UnstableApi;
-import androidx.media3.common.util.Util;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -39,14 +38,13 @@ import java.io.IOException;
 public final class AssetContentProvider extends ContentProvider
     implements ContentProvider.PipeDataWriter<Object> {
 
-  private static final String AUTHORITY = "androidx.media3.test.utils.AssetContentProvider";
   private static final String PARAM_PIPE_MODE = "pipe-mode";
 
-  public static Uri buildUri(String filePath, boolean pipeMode) {
+  public static Uri buildUri(String authority, String filePath, boolean pipeMode) {
     Uri.Builder builder =
         new Uri.Builder()
             .scheme(ContentResolver.SCHEME_CONTENT)
-            .authority(AUTHORITY)
+            .authority(authority)
             .path(filePath);
     if (pipeMode) {
       builder.appendQueryParameter(PARAM_PIPE_MODE, "1");
@@ -148,8 +146,7 @@ public final class AssetContentProvider extends ContentProvider
   }
 
   private static boolean isBrokenPipe(IOException e) {
-    return Util.SDK_INT >= 21
-        && e.getCause() instanceof ErrnoException
+    return e.getCause() instanceof ErrnoException
         && ((ErrnoException) e.getCause()).errno == OsConstants.EPIPE;
   }
 }

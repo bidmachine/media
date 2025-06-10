@@ -29,10 +29,10 @@ import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.net.Uri;
+import android.os.Build;
 import android.provider.Settings.Global;
 import android.util.Pair;
 import android.util.SparseArray;
-import androidx.annotation.DoNotInline;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.annotation.VisibleForTesting;
@@ -40,6 +40,7 @@ import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.MimeTypes;
+import androidx.media3.common.audio.AudioManagerCompat;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import com.google.common.collect.ImmutableList;
@@ -50,6 +51,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /** Represents the set of audio formats that a device is capable of playing. */
@@ -141,8 +143,7 @@ public final class AudioCapabilities {
       @Nullable Intent intent,
       AudioAttributes audioAttributes,
       @Nullable AudioDeviceInfoApi23 routedDevice) {
-    AudioManager audioManager =
-        (AudioManager) checkNotNull(context.getSystemService(Context.AUDIO_SERVICE));
+    AudioManager audioManager = AudioManagerCompat.getAudioManager(context);
     AudioDeviceInfoApi23 currentDevice =
         routedDevice != null
             ? routedDevice
@@ -369,7 +370,7 @@ public final class AudioCapabilities {
   }
 
   private static boolean deviceMaySetExternalSurroundSoundGlobalSetting() {
-    return "Amazon".equals(Util.MANUFACTURER) || "Xiaomi".equals(Util.MANUFACTURER);
+    return Build.MANUFACTURER.equals("Amazon") || Build.MANUFACTURER.equals("Xiaomi");
   }
 
   private static int getChannelConfigForPassthrough(int channelCount) {
@@ -387,7 +388,7 @@ public final class AudioCapabilities {
 
     // Workaround for Nexus Player not reporting support for mono passthrough. See
     // [Internal: b/34268671].
-    if (Util.SDK_INT <= 26 && "fugu".equals(Util.DEVICE) && channelCount == 1) {
+    if (Util.SDK_INT <= 26 && "fugu".equals(Build.DEVICE) && channelCount == 1) {
       channelCount = 2;
     }
 
@@ -517,7 +518,7 @@ public final class AudioCapabilities {
       AudioProfile audioProfile = (AudioProfile) other;
       return encoding == audioProfile.encoding
           && maxChannelCount == audioProfile.maxChannelCount
-          && Util.areEqual(channelMasks, audioProfile.channelMasks);
+          && Objects.equals(channelMasks, audioProfile.channelMasks);
     }
 
     @Override
@@ -544,7 +545,6 @@ public final class AudioCapabilities {
   private static final class Api23 {
     private Api23() {}
 
-    @DoNotInline
     public static boolean isBluetoothConnected(
         AudioManager audioManager, @Nullable AudioDeviceInfoApi23 currentDevice) {
       // Check the current device if known or all devices otherwise.
@@ -570,7 +570,6 @@ public final class AudioCapabilities {
      * AudioDeviceInfo#TYPE_BLE_HEADSET} and {@link AudioDeviceInfo#TYPE_BLE_SPEAKER} are added from
      * API 31. And the type {@link AudioDeviceInfo#TYPE_BLE_BROADCAST} is added from API 33.
      */
-    @DoNotInline
     private static ImmutableSet<Integer> getAllBluetoothDeviceTypes() {
       ImmutableSet.Builder<Integer> allBluetoothDeviceTypes =
           new ImmutableSet.Builder<Integer>()
@@ -591,7 +590,6 @@ public final class AudioCapabilities {
 
     private Api29() {}
 
-    @DoNotInline
     public static ImmutableList<Integer> getDirectPlaybackSupportedEncodings(
         AudioAttributes audioAttributes) {
       ImmutableList.Builder<Integer> supportedEncodingsListBuilder = ImmutableList.builder();
@@ -618,7 +616,6 @@ public final class AudioCapabilities {
      * Returns the maximum number of channels supported for passthrough playback of audio in the
      * given format, or {@code 0} if the format is unsupported.
      */
-    @DoNotInline
     public static int getMaxSupportedChannelCountForPassthrough(
         @C.Encoding int encoding, int sampleRate, AudioAttributes audioAttributes) {
       // TODO(internal b/234351617): Query supported channel masks directly once it's supported,
@@ -648,7 +645,6 @@ public final class AudioCapabilities {
 
     private Api33() {}
 
-    @DoNotInline
     public static AudioCapabilities getCapabilitiesInternalForDirectPlayback(
         AudioManager audioManager, AudioAttributes audioAttributes) {
       List<android.media.AudioProfile> directAudioProfiles =
@@ -658,7 +654,6 @@ public final class AudioCapabilities {
     }
 
     @Nullable
-    @DoNotInline
     public static AudioDeviceInfoApi23 getDefaultRoutedDeviceForAttributes(
         AudioManager audioManager, AudioAttributes audioAttributes) {
       List<AudioDeviceInfo> audioDevices;

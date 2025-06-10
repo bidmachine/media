@@ -19,6 +19,7 @@ import static java.lang.annotation.ElementType.TYPE_USE;
 
 import android.content.Context;
 import android.graphics.Bitmap;
+import android.graphics.SurfaceTexture;
 import android.opengl.EGLExt;
 import android.view.Surface;
 import androidx.annotation.IntDef;
@@ -48,12 +49,18 @@ import java.util.concurrent.Executor;
 public interface VideoFrameProcessor {
   /**
    * Specifies how the input frames are made available to the {@link VideoFrameProcessor}. One of
-   * {@link #INPUT_TYPE_SURFACE}, {@link #INPUT_TYPE_BITMAP} or {@link #INPUT_TYPE_TEXTURE_ID}.
+   * {@link #INPUT_TYPE_SURFACE}, {@link #INPUT_TYPE_BITMAP}, {@link #INPUT_TYPE_TEXTURE_ID} or
+   * {@link #INPUT_TYPE_SURFACE_AUTOMATIC_FRAME_REGISTRATION}.
    */
   @Documented
   @Retention(RetentionPolicy.SOURCE)
   @Target(TYPE_USE)
-  @IntDef({INPUT_TYPE_SURFACE, INPUT_TYPE_BITMAP, INPUT_TYPE_TEXTURE_ID})
+  @IntDef({
+    INPUT_TYPE_SURFACE,
+    INPUT_TYPE_BITMAP,
+    INPUT_TYPE_TEXTURE_ID,
+    INPUT_TYPE_SURFACE_AUTOMATIC_FRAME_REGISTRATION,
+  })
   @interface InputType {}
 
   /**
@@ -72,6 +79,16 @@ public interface VideoFrameProcessor {
    * texture}.
    */
   int INPUT_TYPE_TEXTURE_ID = 3;
+
+  /**
+   * Input frames come from the {@linkplain #getInputSurface input surface} and don't need to be
+   * {@linkplain #registerInputFrame registered} (unlike with {@link #INPUT_TYPE_SURFACE}).
+   *
+   * <p>Every frame must use the {@linkplain #registerInputStream input stream's registered} frame
+   * format. Also sets the surface's {@linkplain
+   * android.graphics.SurfaceTexture#setDefaultBufferSize(int, int) default buffer size}.
+   */
+  int INPUT_TYPE_SURFACE_AUTOMATIC_FRAME_REGISTRATION = 4;
 
   /** A factory for {@link VideoFrameProcessor} instances. */
   interface Factory {
@@ -114,8 +131,8 @@ public interface VideoFrameProcessor {
   interface Listener {
 
     /**
-     * Called when the {@link VideoFrameProcessor} finishes {@linkplain #registerInputStream(int,
-     * List, FrameInfo) registering an input stream}.
+     * Called when the {@link VideoFrameProcessor} finishes {@linkplain #registerInputStream
+     * registering an input stream}.
      *
      * <p>The {@link VideoFrameProcessor} is now ready to accept new input {@linkplain
      * VideoFrameProcessor#registerInputFrame frames}, {@linkplain
@@ -123,11 +140,11 @@ public interface VideoFrameProcessor {
      * VideoFrameProcessor#queueInputTexture(int, long) textures}.
      *
      * @param inputType The {@link InputType} of the new input stream.
+     * @param format The {@link Format} of the new input stream.
      * @param effects The list of {@link Effect effects} to apply to the new input stream.
-     * @param frameInfo The {@link FrameInfo} of the new input stream.
      */
-    void onInputStreamRegistered(
-        @InputType int inputType, List<Effect> effects, FrameInfo frameInfo);
+    default void onInputStreamRegistered(
+        @InputType int inputType, Format format, List<Effect> effects) {}
 
     /**
      * Called when the output size changes.
@@ -138,7 +155,15 @@ public interface VideoFrameProcessor {
      * <p>The output size may differ from the size specified using {@link
      * #setOutputSurfaceInfo(SurfaceInfo)}.
      */
-    void onOutputSizeChanged(int width, int height);
+    default void onOutputSizeChanged(int width, int height) {}
+
+    /**
+     * Called when the output frame rate changes.
+     *
+     * @param frameRate The output frame rate in frames per second, or {@link Format#NO_VALUE} if
+     *     unknown.
+     */
+    default void onOutputFrameRateChanged(float frameRate) {}
 
     /**
      * Called when an output frame with the given {@code presentationTimeUs} becomes available for
@@ -146,7 +171,7 @@ public interface VideoFrameProcessor {
      *
      * @param presentationTimeUs The presentation time of the frame, in microseconds.
      */
-    void onOutputFrameAvailableForRendering(long presentationTimeUs);
+    default void onOutputFrameAvailableForRendering(long presentationTimeUs) {}
 
     /**
      * Called when an exception occurs during asynchronous video frame processing.
@@ -154,10 +179,10 @@ public interface VideoFrameProcessor {
      * <p>If this is called, the calling {@link VideoFrameProcessor} must immediately be {@linkplain
      * VideoFrameProcessor#release() released}.
      */
-    void onError(VideoFrameProcessingException exception);
+    default void onError(VideoFrameProcessingException exception) {}
 
     /** Called after the {@link VideoFrameProcessor} has rendered its final output frame. */
-    void onEnded();
+    default void onEnded() {}
   }
 
   /**
@@ -170,10 +195,17 @@ public interface VideoFrameProcessor {
   long DROP_OUTPUT_FRAME = -2;
 
   /**
+   * Indicates the frame should preserve the input presentation time when {@link
+   * #renderOutputFrame(long)} is invoked.
+   */
+  @SuppressWarnings("GoodTime-ApiWithNumericTimeUnit") // This is a named constant, not a time unit.
+  long RENDER_OUTPUT_FRAME_WITH_PRESENTATION_TIME = -3;
+
+  /**
    * Provides an input {@link Bitmap} to the {@link VideoFrameProcessor}.
    *
-   * <p>Can be called many times after {@link #registerInputStream(int, List, FrameInfo) registering
-   * the input stream} to put multiple frames in the same input stream.
+   * <p>Can be called many times after {@link #registerInputStream registering the input stream} to
+   * put multiple frames in the same input stream.
    *
    * @param inputBitmap The {@link Bitmap} queued to the {@code VideoFrameProcessor}.
    * @param timestampIterator A {@link TimestampIterator} generating the exact timestamps that the
@@ -207,12 +239,30 @@ public interface VideoFrameProcessor {
   void setOnInputFrameProcessedListener(OnInputFrameProcessedListener listener);
 
   /**
+   * Sets a listener that's called when the {@linkplain #getInputSurface() input surface} is ready
+   * to use.
+   */
+  void setOnInputSurfaceReadyListener(Runnable listener);
+
+  // TODO: b/351776002 - Call setDefaultBufferSize on the INPUT_TYPE_SURFACE path too and remove
+  //  mentions of the method (which leak an implementation detail) throughout this file.
+  /**
    * Returns the input {@link Surface}, where {@link VideoFrameProcessor} consumes input frames
    * from.
    *
    * <p>The frames arriving on the {@link Surface} will not be consumed by the {@code
    * VideoFrameProcessor} until {@link #registerInputStream} is called with {@link
    * #INPUT_TYPE_SURFACE}.
+   *
+   * <p>For streams with {@link #INPUT_TYPE_SURFACE}, the returned surface is ready to use
+   * immediately and will not have a {@linkplain SurfaceTexture#setDefaultBufferSize(int, int)
+   * default buffer size} set on it. This is suitable for configuring a {@link
+   * android.media.MediaCodec} decoder.
+   *
+   * <p>For streams with {@link #INPUT_TYPE_SURFACE_AUTOMATIC_FRAME_REGISTRATION}, set a listener
+   * for the surface becoming ready via {@link #setOnInputSurfaceReadyListener(Runnable)} and wait
+   * for the event before using the returned surface. This is suitable for use with non-decoder
+   * producers like media projection.
    *
    * @throws UnsupportedOperationException If the {@code VideoFrameProcessor} does not accept
    *     {@linkplain #INPUT_TYPE_SURFACE surface input}.
@@ -229,14 +279,20 @@ public interface VideoFrameProcessor {
    * #queueInputTexture queued}.
    *
    * <p>This method blocks the calling thread until the previous calls to this method finish, that
-   * is when {@link Listener#onInputStreamRegistered(int, List, FrameInfo)} is called after the
+   * is when {@link Listener#onInputStreamRegistered(int, Format, List)} is called after the
    * underlying processing pipeline has been adapted to the registered input stream.
    *
    * @param inputType The {@link InputType} of the new input stream.
+   * @param format The {@link Format} of the new input stream. The {@link Format#colorInfo}, the
+   *     {@link Format#width}, the {@link Format#height} and the {@link
+   *     Format#pixelWidthHeightRatio} must be set.
    * @param effects The list of {@link Effect effects} to apply to the new input stream.
-   * @param frameInfo The {@link FrameInfo} of the new input stream.
+   * @param offsetToAddUs The offset that must be added to the frame presentation timestamps, in
+   *     microseconds. This offset is not part of the input timestamps. It is added to the frame
+   *     timestamps before processing, and is retained in the output timestamps.
    */
-  void registerInputStream(@InputType int inputType, List<Effect> effects, FrameInfo frameInfo);
+  void registerInputStream(
+      @InputType int inputType, Format format, List<Effect> effects, long offsetToAddUs);
 
   /**
    * Informs the {@code VideoFrameProcessor} that a frame will be queued to its {@linkplain
@@ -245,11 +301,10 @@ public interface VideoFrameProcessor {
    * <p>Must be called before rendering a frame to the input surface. The caller must not render
    * frames to the {@linkplain #getInputSurface input surface} when {@code false} is returned.
    *
-   * @return Whether the input frame was successfully registered. If {@link
-   *     #registerInputStream(int, List, FrameInfo)} is called, this method returns {@code false}
-   *     until {@link Listener#onInputStreamRegistered(int, List, FrameInfo)} is called. Otherwise,
-   *     a return value of {@code false} indicates the {@code VideoFrameProcessor} is not ready to
-   *     accept input.
+   * @return Whether the input frame was successfully registered. If {@link #registerInputStream} is
+   *     called, this method returns {@code false} until {@link
+   *     Listener#onInputStreamRegistered(int, Format, List)} is called. Otherwise, a return value
+   *     of {@code false} indicates the {@code VideoFrameProcessor} is not ready to accept input.
    * @throws UnsupportedOperationException If the {@code VideoFrameProcessor} does not accept
    *     {@linkplain #INPUT_TYPE_SURFACE surface input}.
    * @throws IllegalStateException If called after {@link #signalEndOfInput()} or before {@link
@@ -298,7 +353,10 @@ public interface VideoFrameProcessor {
    *
    * @param renderTimeNs The render time to use for the frame, in nanoseconds. The render time can
    *     be before or after the current system time. Use {@link #DROP_OUTPUT_FRAME} to drop the
-   *     frame, or {@link #RENDER_OUTPUT_FRAME_IMMEDIATELY} to render the frame immediately.
+   *     frame, or {@link #RENDER_OUTPUT_FRAME_IMMEDIATELY} to render the frame immediately, or
+   *     {@link #RENDER_OUTPUT_FRAME_WITH_PRESENTATION_TIME} to render the frame to the {@linkplain
+   *     #setOutputSurfaceInfo output surface} with the presentation timestamp seen in {@link
+   *     Listener#onOutputFrameAvailableForRendering(long)}.
    */
   void renderOutputFrame(long renderTimeNs);
 

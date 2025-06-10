@@ -40,7 +40,9 @@ import androidx.media3.common.SimpleBasePlayer.State;
 import androidx.media3.common.text.Cue;
 import androidx.media3.common.text.CueGroup;
 import androidx.media3.common.util.Size;
+import androidx.media3.extractor.metadata.icy.IcyInfo;
 import androidx.media3.test.utils.FakeMetadataEntry;
+import androidx.media3.test.utils.FakeTimeline;
 import androidx.media3.test.utils.TestUtil;
 import androidx.test.core.app.ApplicationProvider;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -99,7 +101,7 @@ public class SimpleBasePlayerTest {
             .setSeekForwardIncrementMs(4000)
             .setMaxSeekToPreviousPositionMs(3000)
             .setPlaybackParameters(new PlaybackParameters(/* speed= */ 2f))
-            .setTrackSelectionParameters(TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT)
+            .setTrackSelectionParameters(TrackSelectionParameters.DEFAULT)
             .setAudioAttributes(
                 new AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build())
             .setVolume(0.5f)
@@ -144,6 +146,74 @@ public class SimpleBasePlayerTest {
 
     assertThat(newState).isEqualTo(state);
     assertThat(newState.hashCode()).isEqualTo(state.hashCode());
+  }
+
+  @Test
+  public void stateBuildUpon_withExplicitTimeline_isEqual() {
+    MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle("title").build();
+    Tracks tracks =
+        new Tracks(
+            ImmutableList.of(
+                new Tracks.Group(
+                    new TrackGroup(new Format.Builder().build()),
+                    /* adaptiveSupported= */ true,
+                    /* trackSupport= */ new int[] {C.FORMAT_HANDLED},
+                    /* trackSelected= */ new boolean[] {true})));
+    State state =
+        new State.Builder()
+            .setPlaylist(new FakeTimeline(/* windowCount= */ 3), tracks, mediaMetadata)
+            .build();
+
+    State newState = state.buildUpon().build();
+
+    assertThat(newState).isEqualTo(state);
+    assertThat(newState.hashCode()).isEqualTo(state.hashCode());
+  }
+
+  @Test
+  public void stateBuildUpon_withExplicitTimelineAndNewCurrentIndex_reevalutesMediaMetadata() {
+    Timeline timeline =
+        new FakeTimeline(
+            new FakeTimeline.TimelineWindowDefinition(
+                /* periodCount= */ 1,
+                /* id= */ 0,
+                /* isSeekable= */ true,
+                /* isDynamic= */ true,
+                /* isLive= */ true,
+                /* isPlaceholder= */ false,
+                /* durationUs= */ 1000,
+                /* defaultPositionUs= */ 0,
+                /* windowOffsetInFirstPeriodUs= */ 0,
+                ImmutableList.of(AdPlaybackState.NONE),
+                new MediaItem.Builder()
+                    .setMediaId("1")
+                    .setMediaMetadata(new MediaMetadata.Builder().setArtist("artist1").build())
+                    .build()),
+            new FakeTimeline.TimelineWindowDefinition(
+                /* periodCount= */ 1,
+                /* id= */ 1,
+                /* isSeekable= */ true,
+                /* isDynamic= */ true,
+                /* isLive= */ true,
+                /* isPlaceholder= */ false,
+                /* durationUs= */ 1000,
+                /* defaultPositionUs= */ 0,
+                /* windowOffsetInFirstPeriodUs= */ 0,
+                ImmutableList.of(AdPlaybackState.NONE),
+                new MediaItem.Builder()
+                    .setMediaId("2")
+                    .setMediaMetadata(new MediaMetadata.Builder().setArtist("artist2").build())
+                    .build()));
+    State state =
+        new State.Builder()
+            .setPlaylist(timeline, Tracks.EMPTY, /* currentMetadata= */ null)
+            .setCurrentMediaItemIndex(0)
+            .build();
+
+    State newState = state.buildUpon().setCurrentMediaItemIndex(1).build();
+
+    assertThat(newState.currentMetadata)
+        .isEqualTo(new MediaMetadata.Builder().setArtist("artist2").build());
   }
 
   @Test
@@ -210,10 +280,7 @@ public class SimpleBasePlayerTest {
             /* message= */ null, /* cause= */ null, PlaybackException.ERROR_CODE_DECODING_FAILED);
     PlaybackParameters playbackParameters = new PlaybackParameters(/* speed= */ 2f);
     TrackSelectionParameters trackSelectionParameters =
-        TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
-            .buildUpon()
-            .setMaxVideoBitrate(1000)
-            .build();
+        TrackSelectionParameters.DEFAULT.buildUpon().setMaxVideoBitrate(1000).build();
     AudioAttributes audioAttributes =
         new AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build();
     VideoSize videoSize = new VideoSize(/* width= */ 200, /* height= */ 400);
@@ -225,6 +292,15 @@ public class SimpleBasePlayerTest {
     Size surfaceSize = new Size(480, 360);
     DeviceInfo deviceInfo =
         new DeviceInfo.Builder(DeviceInfo.PLAYBACK_TYPE_LOCAL).setMaxVolume(7).build();
+    MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle("title").build();
+    Tracks tracks =
+        new Tracks(
+            ImmutableList.of(
+                new Tracks.Group(
+                    new TrackGroup(new Format.Builder().build()),
+                    /* adaptiveSupported= */ true,
+                    /* trackSupport= */ new int[] {C.FORMAT_HANDLED},
+                    /* trackSelected= */ new boolean[] {true})));
     ImmutableList<SimpleBasePlayer.MediaItemData> playlist =
         ImmutableList.of(
             new SimpleBasePlayer.MediaItemData.Builder(/* uid= */ new Object()).build(),
@@ -236,6 +312,8 @@ public class SimpleBasePlayerTest {
                                 new AdPlaybackState(
                                     /* adsId= */ new Object(), /* adGroupTimesUs...= */ 555, 666))
                             .build()))
+                .setMediaMetadata(mediaMetadata)
+                .setTracks(tracks)
                 .build());
     MediaMetadata playlistMetadata = new MediaMetadata.Builder().setArtist("artist").build();
     SimpleBasePlayer.PositionSupplier contentPositionSupplier = () -> 456;
@@ -312,7 +390,10 @@ public class SimpleBasePlayerTest {
     assertThat(state.surfaceSize).isEqualTo(surfaceSize);
     assertThat(state.newlyRenderedFirstFrame).isTrue();
     assertThat(state.timedMetadata).isEqualTo(timedMetadata);
-    assertThat(state.playlist).isEqualTo(playlist);
+    assertThat(state.getPlaylist()).isEqualTo(playlist);
+    assertThat(state.timeline.getWindowCount()).isEqualTo(2);
+    assertThat(state.currentTracks).isEqualTo(tracks);
+    assertThat(state.currentMetadata).isEqualTo(mediaMetadata);
     assertThat(state.playlistMetadata).isEqualTo(playlistMetadata);
     assertThat(state.currentMediaItemIndex).isEqualTo(1);
     assertThat(state.currentAdGroupIndex).isEqualTo(1);
@@ -325,6 +406,69 @@ public class SimpleBasePlayerTest {
     assertThat(state.hasPositionDiscontinuity).isTrue();
     assertThat(state.positionDiscontinuityReason).isEqualTo(Player.DISCONTINUITY_REASON_SEEK);
     assertThat(state.discontinuityPositionMs).isEqualTo(400);
+  }
+
+  @Test
+  public void stateBuilderBuild_withExplicitTimeline_setsCorrectValues() {
+    MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle("title").build();
+    Tracks tracks =
+        new Tracks(
+            ImmutableList.of(
+                new Tracks.Group(
+                    new TrackGroup(new Format.Builder().build()),
+                    /* adaptiveSupported= */ true,
+                    /* trackSupport= */ new int[] {C.FORMAT_HANDLED},
+                    /* trackSelected= */ new boolean[] {true})));
+    Timeline timeline = new FakeTimeline(/* windowCount= */ 2);
+
+    State state = new State.Builder().setPlaylist(timeline, tracks, mediaMetadata).build();
+
+    assertThat(state.timeline).isEqualTo(timeline);
+    assertThat(state.currentTracks).isEqualTo(tracks);
+    assertThat(state.currentMetadata).isEqualTo(mediaMetadata);
+  }
+
+  @Test
+  public void
+      stateBuilderBuild_withUndefinedMediaMetadataAndExplicitTimeline_derivesMediaMetadataFromTracksAndMediaItem()
+          throws Exception {
+    Timeline timeline =
+        new FakeTimeline(
+            new FakeTimeline.TimelineWindowDefinition(
+                /* periodCount= */ 1,
+                /* id= */ 0,
+                /* isSeekable= */ true,
+                /* isDynamic= */ true,
+                /* isLive= */ true,
+                /* isPlaceholder= */ false,
+                /* durationUs= */ 1000,
+                /* defaultPositionUs= */ 0,
+                /* windowOffsetInFirstPeriodUs= */ 0,
+                ImmutableList.of(AdPlaybackState.NONE),
+                new MediaItem.Builder()
+                    .setMediaId("1")
+                    .setMediaMetadata(new MediaMetadata.Builder().setArtist("artist").build())
+                    .build()));
+    Tracks tracks =
+        new Tracks(
+            ImmutableList.of(
+                new Tracks.Group(
+                    new TrackGroup(
+                        new Format.Builder()
+                            .setMetadata(
+                                new Metadata(
+                                    new IcyInfo(
+                                        /* rawMetadata= */ new byte[0], "title", /* url= */ null)))
+                            .build()),
+                    /* adaptiveSupported= */ true,
+                    /* trackSupport= */ new int[] {C.FORMAT_HANDLED},
+                    /* trackSelected= */ new boolean[] {true})));
+
+    State state =
+        new State.Builder().setPlaylist(timeline, tracks, /* currentMetadata= */ null).build();
+
+    assertThat(state.currentMetadata)
+        .isEqualTo(new MediaMetadata.Builder().setArtist("artist").setTitle("title").build());
   }
 
   @Test
@@ -798,10 +942,7 @@ public class SimpleBasePlayerTest {
             /* message= */ null, /* cause= */ null, PlaybackException.ERROR_CODE_DECODING_FAILED);
     PlaybackParameters playbackParameters = new PlaybackParameters(/* speed= */ 2f);
     TrackSelectionParameters trackSelectionParameters =
-        TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
-            .buildUpon()
-            .setMaxVideoBitrate(1000)
-            .build();
+        TrackSelectionParameters.DEFAULT.buildUpon().setMaxVideoBitrate(1000).build();
     AudioAttributes audioAttributes =
         new AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build();
     VideoSize videoSize = new VideoSize(/* width= */ 200, /* height= */ 400);
@@ -1221,7 +1362,7 @@ public class SimpleBasePlayerTest {
             .setSeekForwardIncrementMs(2000)
             .setMaxSeekToPreviousPositionMs(8000)
             .setPlaybackParameters(PlaybackParameters.DEFAULT)
-            .setTrackSelectionParameters(TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT)
+            .setTrackSelectionParameters(TrackSelectionParameters.DEFAULT)
             .setAudioAttributes(AudioAttributes.DEFAULT)
             .setVolume(1f)
             .setVideoSize(VideoSize.UNKNOWN)
@@ -1260,10 +1401,7 @@ public class SimpleBasePlayerTest {
             /* message= */ null, /* cause= */ null, PlaybackException.ERROR_CODE_DECODING_FAILED);
     PlaybackParameters playbackParameters = new PlaybackParameters(/* speed= */ 2f);
     TrackSelectionParameters trackSelectionParameters =
-        TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
-            .buildUpon()
-            .setMaxVideoBitrate(1000)
-            .build();
+        TrackSelectionParameters.DEFAULT.buildUpon().setMaxVideoBitrate(1000).build();
     AudioAttributes audioAttributes =
         new AudioAttributes.Builder().setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build();
     VideoSize videoSize = new VideoSize(/* width= */ 200, /* height= */ 400);
@@ -8069,6 +8207,211 @@ public class SimpleBasePlayerTest {
     verifyNoMoreInteractions(listener);
   }
 
+  @SuppressWarnings("deprecation") // Verifying deprecated listener calls.
+  @Test
+  public void seekTo_asyncHandlingToNewItem_usesPlaceholderStateWithUpdatedTracksAndMetadata() {
+    MediaItem newMediaItem = new MediaItem.Builder().setMediaId("2").build();
+    Tracks newTracks =
+        new Tracks(
+            ImmutableList.of(
+                new Tracks.Group(
+                    new TrackGroup(new Format.Builder().build()),
+                    /* adaptiveSupported= */ true,
+                    /* trackSupport= */ new int[] {C.FORMAT_HANDLED},
+                    /* trackSelected= */ new boolean[] {true})));
+    MediaMetadata newMediaMetadata = new MediaMetadata.Builder().setTitle("title").build();
+    State state =
+        new State.Builder()
+            .setAvailableCommands(new Commands.Builder().addAllCommands().build())
+            .setPlaylist(
+                ImmutableList.of(
+                    new SimpleBasePlayer.MediaItemData.Builder(/* uid= */ 1).build(),
+                    new SimpleBasePlayer.MediaItemData.Builder(/* uid= */ 2)
+                        .setMediaItem(newMediaItem)
+                        .setTracks(newTracks)
+                        .setMediaMetadata(newMediaMetadata)
+                        .build()))
+            .build();
+    SettableFuture<?> future = SettableFuture.create();
+    SimpleBasePlayer player =
+        new SimpleBasePlayer(Looper.myLooper()) {
+          @Override
+          protected State getState() {
+            return state;
+          }
+
+          @Override
+          protected ListenableFuture<?> handleSeek(
+              int mediaItemIndex, long positionMs, @Player.Command int seekCommand) {
+            return future;
+          }
+        };
+    Listener listener = mock(Listener.class);
+    player.addListener(listener);
+
+    player.seekTo(/* mediaItemIndex= */ 1, /* positionMs= */ 3000);
+
+    // Verify placeholder state and listener calls.
+    assertThat(player.getCurrentMediaItemIndex()).isEqualTo(1);
+    assertThat(player.getCurrentTracks()).isEqualTo(newTracks);
+    assertThat(player.getMediaMetadata()).isEqualTo(newMediaMetadata);
+    verify(listener).onMediaItemTransition(newMediaItem, Player.MEDIA_ITEM_TRANSITION_REASON_SEEK);
+    verify(listener).onTracksChanged(newTracks);
+    verify(listener).onMediaMetadataChanged(newMediaMetadata);
+    verify(listener).onPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK);
+    verify(listener).onPositionDiscontinuity(any(), any(), eq(Player.DISCONTINUITY_REASON_SEEK));
+    verifyNoMoreInteractions(listener);
+  }
+
+  @SuppressWarnings("deprecation") // Verifying deprecated listener calls.
+  @Test
+  public void
+      seekTo_asyncHandlingToNewItemWithExplicitTimeline_usesPlaceholderStateWithEmptyTracksAndMetadata() {
+    Tracks tracks =
+        new Tracks(
+            ImmutableList.of(
+                new Tracks.Group(
+                    new TrackGroup(new Format.Builder().build()),
+                    /* adaptiveSupported= */ true,
+                    /* trackSupport= */ new int[] {C.FORMAT_HANDLED},
+                    /* trackSelected= */ new boolean[] {true})));
+    MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle("title").build();
+    Timeline timeline = new FakeTimeline(/* windowCount= */ 2);
+    State state =
+        new State.Builder()
+            .setAvailableCommands(new Commands.Builder().addAllCommands().build())
+            .setPlaylist(timeline, tracks, mediaMetadata)
+            .build();
+    SettableFuture<?> future = SettableFuture.create();
+    SimpleBasePlayer player =
+        new SimpleBasePlayer(Looper.myLooper()) {
+          @Override
+          protected State getState() {
+            return state;
+          }
+
+          @Override
+          protected ListenableFuture<?> handleSeek(
+              int mediaItemIndex, long positionMs, @Player.Command int seekCommand) {
+            return future;
+          }
+        };
+    Listener listener = mock(Listener.class);
+    player.addListener(listener);
+
+    player.seekTo(/* mediaItemIndex= */ 1, /* positionMs= */ 3000);
+
+    // Verify placeholder state and listener calls.
+    assertThat(player.getCurrentMediaItemIndex()).isEqualTo(1);
+    assertThat(player.getCurrentTracks()).isEqualTo(Tracks.EMPTY);
+    assertThat(player.getMediaMetadata()).isEqualTo(MediaMetadata.EMPTY);
+    verify(listener)
+        .onMediaItemTransition(
+            timeline.getWindow(/* windowIndex= */ 1, new Timeline.Window()).mediaItem,
+            Player.MEDIA_ITEM_TRANSITION_REASON_SEEK);
+    verify(listener).onTracksChanged(Tracks.EMPTY);
+    verify(listener).onMediaMetadataChanged(MediaMetadata.EMPTY);
+    verify(listener).onPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK);
+    verify(listener).onPositionDiscontinuity(any(), any(), eq(Player.DISCONTINUITY_REASON_SEEK));
+    verifyNoMoreInteractions(listener);
+  }
+
+  @SuppressWarnings("deprecation") // Verifying deprecated listener calls.
+  @Test
+  public void
+      seekTo_asyncHandlingToSameItem_usesPlaceholderStateWithoutChangingTracksAndMetadata() {
+    Tracks tracks =
+        new Tracks(
+            ImmutableList.of(
+                new Tracks.Group(
+                    new TrackGroup(new Format.Builder().build()),
+                    /* adaptiveSupported= */ true,
+                    /* trackSupport= */ new int[] {C.FORMAT_HANDLED},
+                    /* trackSelected= */ new boolean[] {true})));
+    MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle("title").build();
+    State state =
+        new State.Builder()
+            .setAvailableCommands(new Commands.Builder().addAllCommands().build())
+            .setPlaylist(
+                ImmutableList.of(
+                    new SimpleBasePlayer.MediaItemData.Builder(/* uid= */ 1)
+                        .setTracks(tracks)
+                        .setMediaMetadata(mediaMetadata)
+                        .build()))
+            .build();
+    SettableFuture<?> future = SettableFuture.create();
+    SimpleBasePlayer player =
+        new SimpleBasePlayer(Looper.myLooper()) {
+          @Override
+          protected State getState() {
+            return state;
+          }
+
+          @Override
+          protected ListenableFuture<?> handleSeek(
+              int mediaItemIndex, long positionMs, @Player.Command int seekCommand) {
+            return future;
+          }
+        };
+    Listener listener = mock(Listener.class);
+    player.addListener(listener);
+
+    player.seekTo(/* positionMs= */ 3000);
+
+    // Verify placeholder state and listener calls.
+    assertThat(player.getCurrentTracks()).isEqualTo(tracks);
+    assertThat(player.getMediaMetadata()).isEqualTo(mediaMetadata);
+    verify(listener).onPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK);
+    verify(listener).onPositionDiscontinuity(any(), any(), eq(Player.DISCONTINUITY_REASON_SEEK));
+    verifyNoMoreInteractions(listener);
+  }
+
+  @SuppressWarnings("deprecation") // Verifying deprecated listener calls.
+  @Test
+  public void
+      seekTo_asyncHandlingToSameItemWithExplicitTimeline_usesPlaceholderStateWithoutChangingTracksAndMetadata() {
+    Tracks tracks =
+        new Tracks(
+            ImmutableList.of(
+                new Tracks.Group(
+                    new TrackGroup(new Format.Builder().build()),
+                    /* adaptiveSupported= */ true,
+                    /* trackSupport= */ new int[] {C.FORMAT_HANDLED},
+                    /* trackSelected= */ new boolean[] {true})));
+    MediaMetadata mediaMetadata = new MediaMetadata.Builder().setTitle("title").build();
+    Timeline timeline = new FakeTimeline(/* windowCount= */ 2);
+    State state =
+        new State.Builder()
+            .setAvailableCommands(new Commands.Builder().addAllCommands().build())
+            .setPlaylist(timeline, tracks, mediaMetadata)
+            .build();
+    SettableFuture<?> future = SettableFuture.create();
+    SimpleBasePlayer player =
+        new SimpleBasePlayer(Looper.myLooper()) {
+          @Override
+          protected State getState() {
+            return state;
+          }
+
+          @Override
+          protected ListenableFuture<?> handleSeek(
+              int mediaItemIndex, long positionMs, @Player.Command int seekCommand) {
+            return future;
+          }
+        };
+    Listener listener = mock(Listener.class);
+    player.addListener(listener);
+
+    player.seekTo(/* positionMs= */ 3000);
+
+    // Verify placeholder state and listener calls.
+    assertThat(player.getCurrentTracks()).isEqualTo(tracks);
+    assertThat(player.getMediaMetadata()).isEqualTo(mediaMetadata);
+    verify(listener).onPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK);
+    verify(listener).onPositionDiscontinuity(any(), any(), eq(Player.DISCONTINUITY_REASON_SEEK));
+    verifyNoMoreInteractions(listener);
+  }
+
   @Test
   public void seekTo_withoutAvailableCommandForSeekToMediaItem_isNotForwarded() {
     State state =
@@ -8412,6 +8755,36 @@ public class SimpleBasePlayerTest {
     player.seekToNextMediaItem();
 
     assertThat(callForwarded.get()).isFalse();
+  }
+
+  @Test
+  public void livePositionProvider_returnsChangingLivePosition() {
+    AtomicInteger livePositionMs = new AtomicInteger(/* initialValue= */ 100);
+    SimpleBasePlayer.LivePositionSupplier livePositionSupplier =
+        new SimpleBasePlayer.LivePositionSupplier(livePositionMs::get);
+
+    long position1Ms = livePositionSupplier.get();
+    livePositionMs.set(200);
+    long position2Ms = livePositionSupplier.get();
+    livePositionMs.set(300);
+    long position3Ms = livePositionSupplier.get();
+
+    assertThat(position1Ms).isEqualTo(100);
+    assertThat(position2Ms).isEqualTo(200);
+    assertThat(position3Ms).isEqualTo(300);
+  }
+
+  @Test
+  public void livePositionProvider_disconnect_returnsFinalPosition() {
+    AtomicInteger livePositionMs = new AtomicInteger(/* initialValue= */ 100);
+    SimpleBasePlayer.LivePositionSupplier livePositionSupplier =
+        new SimpleBasePlayer.LivePositionSupplier(livePositionMs::get);
+
+    livePositionSupplier.disconnect(/* finalValue= */ 150);
+    livePositionMs.set(200);
+    long positionMs = livePositionSupplier.get();
+
+    assertThat(positionMs).isEqualTo(150);
   }
 
   private static Object[] getAnyArguments(Method method) {

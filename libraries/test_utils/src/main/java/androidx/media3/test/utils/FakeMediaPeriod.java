@@ -235,7 +235,8 @@ public class FakeMediaPeriod implements MediaPeriod {
         C.SELECTION_REASON_UNKNOWN,
         /* trackSelectionData= */ null,
         /* mediaStartTimeUs= */ 0,
-        /* mediaEndTimeUs= */ C.TIME_UNSET);
+        /* mediaEndTimeUs= */ C.TIME_UNSET,
+        /* retryCount= */ 0);
     prepareCallback = callback;
     if (deferOnPrepared) {
       playerHandler = Util.createHandlerForCurrentLooper();
@@ -363,10 +364,12 @@ public class FakeMediaPeriod implements MediaPeriod {
 
   @Override
   public boolean continueLoading(LoadingInfo loadingInfo) {
+    boolean progressMade = false;
     for (FakeSampleStream sampleStream : sampleStreams) {
       sampleStream.writeData(loadingInfo.playbackPositionUs);
+      progressMade = true;
     }
-    return true;
+    return progressMade;
   }
 
   @Override

@@ -36,6 +36,7 @@ import android.content.Intent;
 import android.content.ServiceConnection;
 import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.media.session.MediaSession;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -85,6 +86,7 @@ import androidx.media3.session.MediaController.MediaControllerImpl;
 import androidx.media3.session.PlayerInfo.BundlingExclusions;
 import androidx.media3.session.legacy.MediaBrowserCompat;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.common.util.concurrent.MoreExecutors;
@@ -124,7 +126,10 @@ import org.checkerframework.checker.nullness.qual.NonNull;
   private PlayerInfo playerInfo;
   @Nullable private PendingIntent sessionActivity;
   private ImmutableList<CommandButton> customLayoutOriginal;
-  private ImmutableList<CommandButton> customLayoutWithUnavailableButtonsDisabled;
+  private ImmutableList<CommandButton> mediaButtonPreferencesOriginal;
+  private ImmutableList<CommandButton> resolvedMediaButtonPreferences;
+  private ImmutableList<CommandButton> resolvedCustomLayout;
+  private ImmutableMap<String, CommandButton> commandButtonsForMediaItemsMap;
   private SessionCommands sessionCommands;
   private Commands playerCommandsFromSession;
   private Commands playerCommandsFromPlayer;
@@ -134,6 +139,7 @@ import org.checkerframework.checker.nullness.qual.NonNull;
   @Nullable private TextureView videoTextureView;
   private Size surfaceSize;
   @Nullable private IMediaSession iSession;
+  @Nullable private android.media.session.MediaController platformController;
   private long currentPositionMs;
   private long lastSetPlayWhenReadyCalledTimeMs;
   @Nullable private PlayerInfo pendingPlayerInfo;
@@ -151,7 +157,10 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     surfaceSize = Size.UNKNOWN;
     sessionCommands = SessionCommands.EMPTY;
     customLayoutOriginal = ImmutableList.of();
-    customLayoutWithUnavailableButtonsDisabled = ImmutableList.of();
+    mediaButtonPreferencesOriginal = ImmutableList.of();
+    resolvedMediaButtonPreferences = ImmutableList.of();
+    resolvedCustomLayout = ImmutableList.of();
+    commandButtonsForMediaItemsMap = ImmutableMap.of();
     playerCommandsFromSession = Commands.EMPTY;
     playerCommandsFromPlayer = Commands.EMPTY;
     intersectedPlayerCommands =
@@ -208,6 +217,11 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     if (!connectionRequested) {
       getInstance().runOnApplicationLooper(getInstance()::release);
     }
+  }
+
+  @Override
+  public Bundle getConnectionHints() {
+    return connectionHints;
   }
 
   @Override
@@ -399,6 +413,14 @@ import org.checkerframework.checker.nullness.qual.NonNull;
               + " command has started the service for instance for playback resumption, this may"
               + " prevent the service from being started into the foreground.");
       return;
+    }
+
+    if (Util.SDK_INT >= 31 && platformController != null) {
+      // Ensure the platform session gets allow-listed to start a foreground service after receiving
+      // the play command.
+      platformController
+          .getTransportControls()
+          .sendCustomAction(MediaConstants.SESSION_COMMAND_MEDIA3_PLAY_REQUEST, /* args= */ null);
     }
 
     dispatchRemoteSessionTaskWithPlayerCommand(
@@ -728,8 +750,29 @@ import org.checkerframework.checker.nullness.qual.NonNull;
   }
 
   @Override
+  public ImmutableList<CommandButton> getMediaButtonPreferences() {
+    return resolvedMediaButtonPreferences;
+  }
+
+  @Override
   public ImmutableList<CommandButton> getCustomLayout() {
-    return customLayoutWithUnavailableButtonsDisabled;
+    return resolvedCustomLayout;
+  }
+
+  @Override
+  public ImmutableList<CommandButton> getCommandButtonsForMediaItem(MediaItem mediaItem) {
+    ImmutableList<String> supportedActions = mediaItem.mediaMetadata.supportedCommands;
+    SessionCommands availableSessionCommands = getAvailableSessionCommands();
+    ImmutableList.Builder<CommandButton> commandButtonsForMediaItem = new ImmutableList.Builder<>();
+    for (int i = 0; i < supportedActions.size(); i++) {
+      CommandButton commandButton = commandButtonsForMediaItemsMap.get(supportedActions.get(i));
+      if (commandButton != null
+          && commandButton.sessionCommand != null
+          && availableSessionCommands.contains(commandButton.sessionCommand)) {
+        commandButtonsForMediaItem.add(commandButton);
+      }
+    }
+    return commandButtonsForMediaItem.build();
   }
 
   @Override
@@ -2525,7 +2568,11 @@ import org.checkerframework.checker.nullness.qual.NonNull;
         IMediaSession.Stub.asInterface((IBinder) checkStateNotNull(token.getBinder()));
     int seq = sequencedFutureManager.obtainNextSequenceNumber();
     ConnectionRequest request =
-        new ConnectionRequest(context.getPackageName(), Process.myPid(), connectionHints);
+        new ConnectionRequest(
+            context.getPackageName(),
+            Process.myPid(),
+            connectionHints,
+            instance.getMaxCommandsForMediaItems());
     try {
       iSession.connect(controllerStub, seq, request.toBundle());
     } catch (RemoteException e) {
@@ -2615,10 +2662,37 @@ import org.checkerframework.checker.nullness.qual.NonNull;
         createIntersectedCommandsEnsuringCommandReleaseAvailable(
             playerCommandsFromSession, playerCommandsFromPlayer);
     customLayoutOriginal = result.customLayout;
-    customLayoutWithUnavailableButtonsDisabled =
-        CommandButton.copyWithUnavailableButtonsDisabled(
-            result.customLayout, sessionCommands, intersectedPlayerCommands);
+    mediaButtonPreferencesOriginal = result.mediaButtonPreferences;
+    resolvedMediaButtonPreferences =
+        resolveMediaButtonPreferences(
+            mediaButtonPreferencesOriginal,
+            customLayoutOriginal,
+            sessionCommands,
+            intersectedPlayerCommands,
+            result.sessionExtras);
+    resolvedCustomLayout =
+        resolveCustomLayout(
+            resolvedMediaButtonPreferences,
+            customLayoutOriginal,
+            result.sessionExtras,
+            sessionCommands,
+            intersectedPlayerCommands);
+    ImmutableMap.Builder<String, CommandButton> commandButtonsForMediaItems =
+        new ImmutableMap.Builder<>();
+    for (int i = 0; i < result.commandButtonsForMediaItems.size(); i++) {
+      CommandButton commandButton = result.commandButtonsForMediaItems.get(i);
+      if (commandButton.sessionCommand != null
+          && commandButton.sessionCommand.commandCode == SessionCommand.COMMAND_CODE_CUSTOM) {
+        commandButtonsForMediaItems.put(commandButton.sessionCommand.customAction, commandButton);
+      }
+    }
+    commandButtonsForMediaItemsMap = commandButtonsForMediaItems.buildOrThrow();
     playerInfo = result.playerInfo;
+    MediaSession.Token platformToken =
+        result.platformToken == null ? token.getPlatformToken() : result.platformToken;
+    if (platformToken != null) {
+      platformController = new android.media.session.MediaController(context, platformToken);
+    }
     try {
       // Implementation for the local binder is no-op,
       // so can be used without worrying about deadlock.
@@ -2635,7 +2709,8 @@ import org.checkerframework.checker.nullness.qual.NonNull;
             result.sessionInterfaceVersion,
             token.getPackageName(),
             result.sessionBinder,
-            result.tokenExtras);
+            result.tokenExtras,
+            platformToken);
     sessionExtras = result.sessionExtras;
     getInstance().notifyAccepted();
   }
@@ -2732,7 +2807,7 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     @Nullable
     @Player.MediaItemTransitionReason
     Integer mediaItemTransitionReason =
-        !Util.areEqual(oldPlayerInfo.getCurrentMediaItem(), finalPlayerInfo.getCurrentMediaItem())
+        !Objects.equals(oldPlayerInfo.getCurrentMediaItem(), finalPlayerInfo.getCurrentMediaItem())
             ? finalPlayerInfo.mediaItemTransitionReason
             : null;
 
@@ -2765,8 +2840,8 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     if (!isConnected()) {
       return;
     }
-    boolean playerCommandsChanged = !Util.areEqual(playerCommandsFromSession, playerCommands);
-    boolean sessionCommandsChanged = !Util.areEqual(this.sessionCommands, sessionCommands);
+    boolean playerCommandsChanged = !Objects.equals(playerCommandsFromSession, playerCommands);
+    boolean sessionCommandsChanged = !Objects.equals(this.sessionCommands, sessionCommands);
     if (!playerCommandsChanged && !sessionCommandsChanged) {
       return;
     }
@@ -2779,15 +2854,30 @@ import org.checkerframework.checker.nullness.qual.NonNull;
           createIntersectedCommandsEnsuringCommandReleaseAvailable(
               playerCommandsFromSession, playerCommandsFromPlayer);
       intersectedPlayerCommandsChanged =
-          !Util.areEqual(intersectedPlayerCommands, prevIntersectedPlayerCommands);
+          !Objects.equals(intersectedPlayerCommands, prevIntersectedPlayerCommands);
     }
+    boolean mediaButtonPreferencesChanged = false;
     boolean customLayoutChanged = false;
     if (sessionCommandsChanged || intersectedPlayerCommandsChanged) {
-      ImmutableList<CommandButton> oldCustomLayout = customLayoutWithUnavailableButtonsDisabled;
-      customLayoutWithUnavailableButtonsDisabled =
-          CommandButton.copyWithUnavailableButtonsDisabled(
-              customLayoutOriginal, sessionCommands, intersectedPlayerCommands);
-      customLayoutChanged = !customLayoutWithUnavailableButtonsDisabled.equals(oldCustomLayout);
+      ImmutableList<CommandButton> oldMediaButtonPreferences = resolvedMediaButtonPreferences;
+      ImmutableList<CommandButton> oldCustomLayout = resolvedCustomLayout;
+      resolvedMediaButtonPreferences =
+          resolveMediaButtonPreferences(
+              mediaButtonPreferencesOriginal,
+              customLayoutOriginal,
+              sessionCommands,
+              intersectedPlayerCommands,
+              sessionExtras);
+      resolvedCustomLayout =
+          resolveCustomLayout(
+              resolvedMediaButtonPreferences,
+              customLayoutOriginal,
+              sessionExtras,
+              sessionCommands,
+              intersectedPlayerCommands);
+      mediaButtonPreferencesChanged =
+          !resolvedMediaButtonPreferences.equals(oldMediaButtonPreferences);
+      customLayoutChanged = !resolvedCustomLayout.equals(oldCustomLayout);
     }
     if (intersectedPlayerCommandsChanged) {
       listeners.sendEvent(
@@ -2803,9 +2893,14 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     if (customLayoutChanged) {
       getInstance()
           .notifyControllerListener(
+              listener -> listener.onCustomLayoutChanged(getInstance(), resolvedCustomLayout));
+    }
+    if (mediaButtonPreferencesChanged) {
+      getInstance()
+          .notifyControllerListener(
               listener ->
-                  listener.onCustomLayoutChanged(
-                      getInstance(), customLayoutWithUnavailableButtonsDisabled));
+                  listener.onMediaButtonPreferencesChanged(
+                      getInstance(), resolvedMediaButtonPreferences));
     }
   }
 
@@ -2813,7 +2908,7 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     if (!isConnected()) {
       return;
     }
-    if (Util.areEqual(playerCommandsFromPlayer, commandsFromPlayer)) {
+    if (Objects.equals(playerCommandsFromPlayer, commandsFromPlayer)) {
       return;
     }
     playerCommandsFromPlayer = commandsFromPlayer;
@@ -2822,14 +2917,29 @@ import org.checkerframework.checker.nullness.qual.NonNull;
         createIntersectedCommandsEnsuringCommandReleaseAvailable(
             playerCommandsFromSession, playerCommandsFromPlayer);
     boolean intersectedPlayerCommandsChanged =
-        !Util.areEqual(intersectedPlayerCommands, prevIntersectedPlayerCommands);
+        !Objects.equals(intersectedPlayerCommands, prevIntersectedPlayerCommands);
+    boolean mediaButtonPreferencesChanged = false;
     boolean customLayoutChanged = false;
     if (intersectedPlayerCommandsChanged) {
-      ImmutableList<CommandButton> oldCustomLayout = customLayoutWithUnavailableButtonsDisabled;
-      customLayoutWithUnavailableButtonsDisabled =
-          CommandButton.copyWithUnavailableButtonsDisabled(
-              customLayoutOriginal, sessionCommands, intersectedPlayerCommands);
-      customLayoutChanged = !customLayoutWithUnavailableButtonsDisabled.equals(oldCustomLayout);
+      ImmutableList<CommandButton> oldMediaButtonPreferences = resolvedMediaButtonPreferences;
+      ImmutableList<CommandButton> oldCustomLayout = resolvedCustomLayout;
+      resolvedMediaButtonPreferences =
+          resolveMediaButtonPreferences(
+              mediaButtonPreferencesOriginal,
+              customLayoutOriginal,
+              sessionCommands,
+              intersectedPlayerCommands,
+              sessionExtras);
+      resolvedCustomLayout =
+          resolveCustomLayout(
+              resolvedMediaButtonPreferences,
+              customLayoutOriginal,
+              sessionExtras,
+              sessionCommands,
+              intersectedPlayerCommands);
+      mediaButtonPreferencesChanged =
+          !resolvedMediaButtonPreferences.equals(oldMediaButtonPreferences);
+      customLayoutChanged = !resolvedCustomLayout.equals(oldCustomLayout);
       listeners.sendEvent(
           /* eventFlag= */ Player.EVENT_AVAILABLE_COMMANDS_CHANGED,
           listener -> listener.onAvailableCommandsChanged(intersectedPlayerCommands));
@@ -2837,36 +2947,96 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     if (customLayoutChanged) {
       getInstance()
           .notifyControllerListener(
+              listener -> listener.onCustomLayoutChanged(getInstance(), resolvedCustomLayout));
+    }
+    if (mediaButtonPreferencesChanged) {
+      getInstance()
+          .notifyControllerListener(
               listener ->
-                  listener.onCustomLayoutChanged(
-                      getInstance(), customLayoutWithUnavailableButtonsDisabled));
+                  listener.onMediaButtonPreferencesChanged(
+                      getInstance(), resolvedMediaButtonPreferences));
     }
   }
 
-  // Calling deprecated listener callback method for backwards compatibility.
-  @SuppressWarnings("deprecation")
   void onSetCustomLayout(int seq, List<CommandButton> layout) {
     if (!isConnected()) {
       return;
     }
-    ImmutableList<CommandButton> oldCustomLayout = customLayoutWithUnavailableButtonsDisabled;
+    ImmutableList<CommandButton> oldMediaButtonPreferences = resolvedMediaButtonPreferences;
+    ImmutableList<CommandButton> oldCustomLayout = resolvedCustomLayout;
     customLayoutOriginal = ImmutableList.copyOf(layout);
-    customLayoutWithUnavailableButtonsDisabled =
-        CommandButton.copyWithUnavailableButtonsDisabled(
-            layout, sessionCommands, intersectedPlayerCommands);
-    boolean hasCustomLayoutChanged =
-        !Objects.equals(customLayoutWithUnavailableButtonsDisabled, oldCustomLayout);
+    resolvedMediaButtonPreferences =
+        resolveMediaButtonPreferences(
+            mediaButtonPreferencesOriginal,
+            layout,
+            sessionCommands,
+            intersectedPlayerCommands,
+            sessionExtras);
+    resolvedCustomLayout =
+        resolveCustomLayout(
+            resolvedMediaButtonPreferences,
+            layout,
+            sessionExtras,
+            sessionCommands,
+            intersectedPlayerCommands);
+    boolean mediaButtonPreferencesChanged =
+        !resolvedMediaButtonPreferences.equals(oldMediaButtonPreferences);
+    boolean customLayoutChanged = !resolvedCustomLayout.equals(oldCustomLayout);
     getInstance()
         .notifyControllerListener(
             listener -> {
               ListenableFuture<SessionResult> future =
                   checkNotNull(
-                      listener.onSetCustomLayout(
-                          getInstance(), customLayoutWithUnavailableButtonsDisabled),
+                      listener.onSetCustomLayout(getInstance(), resolvedCustomLayout),
                       "MediaController.Listener#onSetCustomLayout() must not return null");
-              if (hasCustomLayoutChanged) {
-                listener.onCustomLayoutChanged(
-                    getInstance(), customLayoutWithUnavailableButtonsDisabled);
+              if (customLayoutChanged) {
+                listener.onCustomLayoutChanged(getInstance(), resolvedCustomLayout);
+              }
+              if (mediaButtonPreferencesChanged) {
+                listener.onMediaButtonPreferencesChanged(
+                    getInstance(), resolvedMediaButtonPreferences);
+              }
+              sendControllerResultWhenReady(seq, future);
+            });
+  }
+
+  void onSetMediaButtonPreferences(int seq, List<CommandButton> mediaButtonPreferences) {
+    if (!isConnected()) {
+      return;
+    }
+    ImmutableList<CommandButton> oldMediaButtonPreferences = resolvedMediaButtonPreferences;
+    ImmutableList<CommandButton> oldCustomLayout = resolvedCustomLayout;
+    mediaButtonPreferencesOriginal = ImmutableList.copyOf(mediaButtonPreferences);
+    resolvedMediaButtonPreferences =
+        resolveMediaButtonPreferences(
+            mediaButtonPreferences,
+            customLayoutOriginal,
+            sessionCommands,
+            intersectedPlayerCommands,
+            sessionExtras);
+    resolvedCustomLayout =
+        resolveCustomLayout(
+            resolvedMediaButtonPreferences,
+            customLayoutOriginal,
+            sessionExtras,
+            sessionCommands,
+            intersectedPlayerCommands);
+    boolean mediaButtonPreferencesChanged =
+        !resolvedMediaButtonPreferences.equals(oldMediaButtonPreferences);
+    boolean customLayoutChanged = !resolvedCustomLayout.equals(oldCustomLayout);
+    getInstance()
+        .notifyControllerListener(
+            listener -> {
+              ListenableFuture<SessionResult> future =
+                  checkNotNull(
+                      listener.onSetCustomLayout(getInstance(), resolvedCustomLayout),
+                      "MediaController.Listener#onSetCustomLayout() must not return null");
+              if (customLayoutChanged) {
+                listener.onCustomLayoutChanged(getInstance(), resolvedCustomLayout);
+              }
+              if (mediaButtonPreferencesChanged) {
+                listener.onMediaButtonPreferencesChanged(
+                    getInstance(), resolvedMediaButtonPreferences);
               }
               sendControllerResultWhenReady(seq, future);
             });
@@ -2876,13 +3046,42 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     if (!isConnected()) {
       return;
     }
+    ImmutableList<CommandButton> oldMediaButtonPreferences = resolvedMediaButtonPreferences;
+    ImmutableList<CommandButton> oldCustomLayout = resolvedCustomLayout;
     sessionExtras = extras;
+    resolvedMediaButtonPreferences =
+        resolveMediaButtonPreferences(
+            mediaButtonPreferencesOriginal,
+            customLayoutOriginal,
+            sessionCommands,
+            intersectedPlayerCommands,
+            sessionExtras);
+    resolvedCustomLayout =
+        resolveCustomLayout(
+            resolvedMediaButtonPreferences,
+            customLayoutOriginal,
+            sessionExtras,
+            sessionCommands,
+            intersectedPlayerCommands);
+    boolean mediaButtonPreferencesChanged =
+        !resolvedMediaButtonPreferences.equals(oldMediaButtonPreferences);
+    boolean customLayoutChanged = !resolvedCustomLayout.equals(oldCustomLayout);
     getInstance()
-        .notifyControllerListener(listener -> listener.onExtrasChanged(getInstance(), extras));
+        .notifyControllerListener(
+            listener -> {
+              listener.onExtrasChanged(getInstance(), extras);
+              if (customLayoutChanged) {
+                listener.onCustomLayoutChanged(getInstance(), resolvedCustomLayout);
+              }
+              if (mediaButtonPreferencesChanged) {
+                listener.onMediaButtonPreferencesChanged(
+                    getInstance(), resolvedMediaButtonPreferences);
+              }
+            });
   }
 
-  public void onSetSessionActivity(int seq, PendingIntent sessionActivity) {
-    if (!isConnected()) {
+  public void onSetSessionActivity(int seq, @Nullable PendingIntent sessionActivity) {
+    if (!isConnected() || Objects.equals(this.sessionActivity, sessionActivity)) {
       return;
     }
     this.sessionActivity = sessionActivity;
@@ -3224,6 +3423,44 @@ import org.checkerframework.checker.nullness.qual.NonNull;
     return newMediaItemIndex;
   }
 
+  private static ImmutableList<CommandButton> resolveMediaButtonPreferences(
+      List<CommandButton> mediaButtonPreferences,
+      List<CommandButton> customLayout,
+      SessionCommands sessionCommands,
+      Player.Commands playerCommands,
+      Bundle sessionExtras) {
+    List<CommandButton> resolvedButtons = mediaButtonPreferences;
+    if (resolvedButtons.isEmpty()) {
+      resolvedButtons =
+          CommandButton.getMediaButtonPreferencesFromCustomLayout(
+              customLayout, playerCommands, sessionExtras);
+    }
+    return CommandButton.copyWithUnavailableButtonsDisabled(
+        resolvedButtons, sessionCommands, playerCommands);
+  }
+
+  private static ImmutableList<CommandButton> resolveCustomLayout(
+      List<CommandButton> mediaButtonPreferences,
+      List<CommandButton> customLayoutOriginal,
+      Bundle sessionExtras,
+      SessionCommands sessionCommands,
+      Player.Commands playerCommands) {
+    if (!customLayoutOriginal.isEmpty()) {
+      return CommandButton.copyWithUnavailableButtonsDisabled(
+          customLayoutOriginal, sessionCommands, playerCommands);
+    }
+    boolean backSlotAllowed =
+        !sessionExtras.getBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_PREV)
+            && !playerCommands.containsAny(
+                Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM, Player.COMMAND_SEEK_TO_PREVIOUS);
+    boolean forwardSlotAllowed =
+        !sessionExtras.getBoolean(MediaConstants.EXTRAS_KEY_SLOT_RESERVATION_SEEK_TO_NEXT)
+            && !playerCommands.containsAny(
+                Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM, Player.COMMAND_SEEK_TO_NEXT);
+    return CommandButton.getCustomLayoutFromMediaButtonPreferences(
+        mediaButtonPreferences, backSlotAllowed, forwardSlotAllowed);
+  }
+
   private static Commands createIntersectedCommandsEnsuringCommandReleaseAvailable(
       Commands commandFromSession, Commands commandsFromPlayer) {
     Commands intersectedCommands = MediaUtils.intersect(commandFromSession, commandsFromPlayer);
@@ -3263,7 +3500,11 @@ import org.checkerframework.checker.nullness.qual.NonNull;
           return;
         }
         ConnectionRequest request =
-            new ConnectionRequest(getContext().getPackageName(), Process.myPid(), connectionHints);
+            new ConnectionRequest(
+                getContext().getPackageName(),
+                Process.myPid(),
+                connectionHints,
+                instance.getMaxCommandsForMediaItems());
         iService.connect(controllerStub, request.toBundle());
         connectionRequested = true;
       } catch (RemoteException e) {

@@ -28,8 +28,8 @@ import android.text.Layout;
 import android.text.SpannableString;
 import android.text.StaticLayout;
 import android.text.TextPaint;
-import androidx.annotation.DoNotInline;
 import androidx.annotation.RequiresApi;
+import androidx.media3.common.OverlaySettings;
 import androidx.media3.common.util.UnstableApi;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
@@ -44,7 +44,7 @@ public abstract class TextOverlay extends BitmapOverlay {
 
   /**
    * Creates a {@link TextOverlay} that shows the {@code overlayText} with the same default settings
-   * in {@link OverlaySettings} throughout the whole video.
+   * in {@link StaticOverlaySettings} throughout the whole video.
    */
   public static TextOverlay createStaticTextOverlay(SpannableString overlayText) {
     return new TextOverlay() {
@@ -57,14 +57,14 @@ public abstract class TextOverlay extends BitmapOverlay {
 
   /**
    * Creates a {@link TextOverlay} that shows the {@code overlayText} with the same {@link
-   * OverlaySettings} throughout the whole video.
+   * StaticOverlaySettings} throughout the whole video.
    *
    * @param overlayText The text to overlay on the video.
-   * @param overlaySettings The {@link OverlaySettings} configuring how the overlay is displayed on
-   *     the frames.
+   * @param overlaySettings The {@link StaticOverlaySettings} configuring how the overlay is
+   *     displayed on the frames.
    */
   public static TextOverlay createStaticTextOverlay(
-      SpannableString overlayText, OverlaySettings overlaySettings) {
+      SpannableString overlayText, StaticOverlaySettings overlaySettings) {
     return new TextOverlay() {
       @Override
       public SpannableString getText(long presentationTimeUs) {
@@ -142,7 +142,6 @@ public abstract class TextOverlay extends BitmapOverlay {
 
   @RequiresApi(23)
   private static final class Api23 {
-    @DoNotInline
     public static StaticLayout getStaticLayout(
         SpannableString text, TextPaint textPaint, int width) {
       return StaticLayout.Builder.obtain(

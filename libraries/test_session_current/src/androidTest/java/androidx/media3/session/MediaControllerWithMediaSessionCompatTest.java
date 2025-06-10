@@ -43,6 +43,7 @@ import static com.google.common.truth.Truth.assertThat;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static java.util.concurrent.TimeUnit.SECONDS;
 
+import android.annotation.SuppressLint;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
@@ -361,6 +362,9 @@ public class MediaControllerWithMediaSessionCompatTest {
     assertThat(controller.getConnectedToken().getSessionVersion()).isLessThan(1_000_000);
   }
 
+  // Ignore warning about getCreatorPackage as this is just used as a test assertion to see if the
+  // correct activity has been received by the controller.
+  @SuppressLint("PendingIntentCreator")
   @Test
   public void getSessionActivity() throws Exception {
     Intent sessionActivity = new Intent(context, MockActivity.class);
@@ -571,11 +575,8 @@ public class MediaControllerWithMediaSessionCompatTest {
     assertThat(TextUtils.equals(metadata.subtitle, testSubtitle)).isTrue();
     assertThat(TextUtils.equals(metadata.description, testDescription)).isTrue();
     assertThat(metadata.artworkUri).isEqualTo(testIconUri);
-    if (Util.SDK_INT >= 21) {
-      // Bitmap conversion and back gives not exactly the same byte array below API 21
-      assertThat(metadata.artworkData).isEqualTo(testArtworkData);
-    }
-    if (Util.SDK_INT < 21 || Util.SDK_INT >= 23) {
+    assertThat(metadata.artworkData).isEqualTo(testArtworkData);
+    if (Util.SDK_INT >= 23) {
       // TODO(b/199055952): Test mediaUri for all API levels once the bug is fixed.
       assertThat(mediaItem.requestMetadata.mediaUri).isEqualTo(testMediaUri);
     }
@@ -909,19 +910,6 @@ public class MediaControllerWithMediaSessionCompatTest {
         threadTestRule.getHandler().postAndSync(controller::getMediaMetadata);
 
     assertThat(mediaMetadata.artworkData).isNotNull();
-    if (Util.SDK_INT < 21) {
-      // Bitmap conversion and back gives not exactly the same byte array below API 21
-      mediaMetadata =
-          mediaMetadata
-              .buildUpon()
-              .setArtworkData(/* artworkData= */ null, /* artworkDataType= */ null)
-              .build();
-      testMediaMetadata =
-          testMediaMetadata
-              .buildUpon()
-              .setArtworkData(/* artworkData= */ null, /* artworkDataType= */ null)
-              .build();
-    }
     assertThat(mediaMetadata.artworkData).isEqualTo(testMediaMetadata.artworkData);
   }
 
@@ -1473,6 +1461,84 @@ public class MediaControllerWithMediaSessionCompatTest {
   }
 
   @Test
+  public void setPlaybackState_toStoppedWithEndPosition_notifiesPlaybackStateEnded()
+      throws Exception {
+    long testDuration = 1_000;
+    session.setPlaybackState(
+        new PlaybackStateCompat.Builder()
+            .setState(PlaybackStateCompat.STATE_PLAYING, /* position= */ 0, /* playbackSpeed= */ 1f)
+            .build());
+    session.setMetadata(
+        new MediaMetadataCompat.Builder().putLong(METADATA_KEY_DURATION, testDuration).build());
+
+    MediaController controller = controllerTestRule.createController(session.getSessionToken());
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicInteger playbackStateFromParamRef = new AtomicInteger();
+    AtomicInteger playbackStateFromGetterRef = new AtomicInteger();
+    Player.Listener listener =
+        new Player.Listener() {
+          @Override
+          public void onPlaybackStateChanged(@Player.State int playbackState) {
+            playbackStateFromParamRef.set(playbackState);
+            playbackStateFromGetterRef.set(controller.getPlaybackState());
+            latch.countDown();
+          }
+        };
+    threadTestRule.getHandler().postAndSync(() -> controller.addListener(listener));
+
+    session.setPlaybackState(
+        new PlaybackStateCompat.Builder()
+            .setState(
+                PlaybackStateCompat.STATE_STOPPED,
+                /* position= */ testDuration,
+                /* playbackSpeed= */ 1f)
+            .build());
+
+    assertThat(latch.await(TIMEOUT_MS, MILLISECONDS)).isTrue();
+    assertThat(playbackStateFromParamRef.get()).isEqualTo(Player.STATE_ENDED);
+    assertThat(playbackStateFromGetterRef.get()).isEqualTo(Player.STATE_ENDED);
+  }
+
+  @Test
+  public void setPlaybackState_toStoppedBeforeEndPosition_notifiesPlaybackStateIdle()
+      throws Exception {
+    long testDuration = 1_000;
+    session.setPlaybackState(
+        new PlaybackStateCompat.Builder()
+            .setState(PlaybackStateCompat.STATE_PLAYING, /* position= */ 0, /* playbackSpeed= */ 1f)
+            .build());
+    session.setMetadata(
+        new MediaMetadataCompat.Builder().putLong(METADATA_KEY_DURATION, testDuration).build());
+
+    MediaController controller = controllerTestRule.createController(session.getSessionToken());
+    CountDownLatch latch = new CountDownLatch(1);
+    AtomicInteger playbackStateFromParamRef = new AtomicInteger();
+    AtomicInteger playbackStateFromGetterRef = new AtomicInteger();
+    Player.Listener listener =
+        new Player.Listener() {
+          @Override
+          public void onPlaybackStateChanged(@Player.State int playbackState) {
+            playbackStateFromParamRef.set(playbackState);
+            playbackStateFromGetterRef.set(controller.getPlaybackState());
+            latch.countDown();
+          }
+        };
+    threadTestRule.getHandler().postAndSync(() -> controller.addListener(listener));
+
+    session.setPlaybackState(
+        new PlaybackStateCompat.Builder()
+            .setState(
+                PlaybackStateCompat.STATE_STOPPED,
+                /* position= */ testDuration / 2,
+                /* playbackSpeed= */ 1f)
+            .build());
+
+    assertThat(latch.await(TIMEOUT_MS, MILLISECONDS)).isTrue();
+    assertThat(playbackStateFromParamRef.get()).isEqualTo(Player.STATE_IDLE);
+    assertThat(playbackStateFromGetterRef.get()).isEqualTo(Player.STATE_IDLE);
+  }
+
+  @Test
   public void setPlaybackState_withSpeed_notifiesOnPlaybackParametersChanged() throws Exception {
     MediaController controller = controllerTestRule.createController(session.getSessionToken());
     CountDownLatch latch = new CountDownLatch(1);
@@ -1573,7 +1639,7 @@ public class MediaControllerWithMediaSessionCompatTest {
 
   @Test
   public void setPlaybackToLocal_notifiesDeviceInfoAndVolume() throws Exception {
-    if (Util.SDK_INT == 21 || Util.SDK_INT == 22) {
+    if (Util.SDK_INT <= 22) {
       // In API 21 and 22, onAudioInfoChanged is not called.
       return;
     }

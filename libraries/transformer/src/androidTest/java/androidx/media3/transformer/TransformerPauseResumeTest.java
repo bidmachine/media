@@ -15,8 +15,7 @@
  */
 package androidx.media3.transformer;
 
-import static androidx.media3.transformer.AndroidTestUtil.MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT;
-import static androidx.media3.transformer.AndroidTestUtil.MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_URI_STRING;
+import static androidx.media3.transformer.AndroidTestUtil.MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S;
 import static androidx.media3.transformer.AndroidTestUtil.assumeFormatsSupported;
 import static androidx.test.core.app.ApplicationProvider.getApplicationContext;
 import static com.google.common.truth.Truth.assertThat;
@@ -24,26 +23,19 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.junit.Assume.assumeFalse;
 
 import android.content.Context;
-import android.media.MediaCodec.BufferInfo;
-import androidx.annotation.Nullable;
+import android.os.Build;
 import androidx.media3.common.C;
 import androidx.media3.common.Effect;
-import androidx.media3.common.Format;
 import androidx.media3.common.MediaItem;
-import androidx.media3.common.Metadata;
-import androidx.media3.common.MimeTypes;
 import androidx.media3.common.audio.AudioProcessor;
 import androidx.media3.common.audio.SonicAudioProcessor;
 import androidx.media3.common.util.Util;
 import androidx.media3.effect.RgbFilter;
-import androidx.media3.muxer.Muxer;
-import androidx.media3.muxer.Muxer.MuxerException;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 import com.google.common.base.Ascii;
 import com.google.common.collect.ImmutableList;
 import java.io.File;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
@@ -60,7 +52,7 @@ import org.junit.runner.RunWith;
 public class TransformerPauseResumeTest {
   @Rule public final TemporaryFolder temporaryFolder = new TemporaryFolder();
 
-  private static final long DEFAULT_PRESENTATION_TIME_US_TO_BLOCK_FRAME = 5_000_000L;
+  private static final long PRESENTATION_TIME_US_TO_BLOCK_FRAME = 5_000_000L;
   private static final int DEFAULT_TIMEOUT_SECONDS = 120;
   private static final int MP4_ASSET_FRAME_COUNT = 932;
 
@@ -80,8 +72,8 @@ public class TransformerPauseResumeTest {
     assumeFormatsSupported(
         getApplicationContext(),
         testId,
-        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT,
-        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT);
+        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat,
+        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat);
     Composition composition =
         buildSingleSequenceComposition(
             /* clippingStartPositionMs= */ 0,
@@ -132,8 +124,8 @@ public class TransformerPauseResumeTest {
     assumeFormatsSupported(
         getApplicationContext(),
         testId,
-        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT,
-        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT);
+        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat,
+        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat);
     Composition composition =
         buildSingleSequenceComposition(
             /* clippingStartPositionMs= */ 0,
@@ -167,8 +159,8 @@ public class TransformerPauseResumeTest {
     assumeFormatsSupported(
         getApplicationContext(),
         testId,
-        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT,
-        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT);
+        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat,
+        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat);
     Composition composition =
         buildSingleSequenceComposition(
             /* clippingStartPositionMs= */ 0,
@@ -222,8 +214,8 @@ public class TransformerPauseResumeTest {
     assumeFormatsSupported(
         getApplicationContext(),
         testId,
-        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT,
-        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT);
+        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat,
+        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat);
     Composition composition =
         buildSingleSequenceComposition(
             /* clippingStartPositionMs= */ 2_000L,
@@ -274,8 +266,8 @@ public class TransformerPauseResumeTest {
     assumeFormatsSupported(
         getApplicationContext(),
         testId,
-        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT,
-        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT);
+        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat,
+        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat);
     Composition composition =
         buildSingleSequenceComposition(
             /* clippingStartPositionMs= */ 0,
@@ -329,8 +321,8 @@ public class TransformerPauseResumeTest {
     assumeFormatsSupported(
         getApplicationContext(),
         testId,
-        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT,
-        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_FORMAT);
+        /* inputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat,
+        /* outputFormat= */ MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.videoFormat);
     Composition composition =
         buildSingleSequenceComposition(
             /* clippingStartPositionMs= */ 0,
@@ -385,7 +377,7 @@ public class TransformerPauseResumeTest {
     EditedMediaItem editedMediaItem =
         new EditedMediaItem.Builder(
                 new MediaItem.Builder()
-                    .setUri(MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S_URI_STRING)
+                    .setUri(MP4_ASSET_WITH_INCREASING_TIMESTAMPS_320W_240H_15S.uri)
                     .setClippingConfiguration(
                         new MediaItem.ClippingConfiguration.Builder()
                             .setStartPositionMs(clippingStartPositionMs)
@@ -400,91 +392,26 @@ public class TransformerPauseResumeTest {
       editedMediaItemList.add(editedMediaItem);
     }
 
-    return new Composition.Builder(new EditedMediaItemSequence(editedMediaItemList)).build();
+    return new Composition.Builder(new EditedMediaItemSequence.Builder(editedMediaItemList).build())
+        .build();
   }
 
-  private static Transformer buildBlockingTransformer(FrameBlockingMuxer.Listener listener) {
+  private static Transformer buildBlockingTransformer(
+      AndroidTestUtil.FrameBlockingMuxer.Listener listener) {
     return new Transformer.Builder(getApplicationContext())
-        .setMuxerFactory(new FrameBlockingMuxerFactory(listener))
+        .setMuxerFactory(
+            new AndroidTestUtil.FrameBlockingMuxerFactory(
+                PRESENTATION_TIME_US_TO_BLOCK_FRAME, listener))
         .build();
   }
 
   private static boolean shouldSkipDevice() {
     // v26 emulators are not producing I-frames, due to which resuming export does not work as
     // expected.
-    // On vivo 1820 and vivo 1906, the process crashes unexpectedly.
+    // On vivo 1820 and vivo 1906, the process crashes unexpectedly (see b/310566201).
     return (Util.SDK_INT == 26 && Util.isRunningOnEmulator())
-        || (Util.SDK_INT == 27 && Ascii.equalsIgnoreCase(Util.MODEL, "vivo 1820"))
-        || (Util.SDK_INT == 28 && Ascii.equalsIgnoreCase(Util.MODEL, "vivo 1906"));
-  }
-
-  private static final class FrameBlockingMuxerFactory implements Muxer.Factory {
-    private final Muxer.Factory wrappedMuxerFactory;
-    private final FrameBlockingMuxer.Listener listener;
-
-    public FrameBlockingMuxerFactory(FrameBlockingMuxer.Listener listener) {
-      this.wrappedMuxerFactory = new DefaultMuxer.Factory();
-      this.listener = listener;
-    }
-
-    @Override
-    public Muxer create(String path) throws MuxerException {
-      return new FrameBlockingMuxer(wrappedMuxerFactory.create(path), listener);
-    }
-
-    @Override
-    public ImmutableList<String> getSupportedSampleMimeTypes(@C.TrackType int trackType) {
-      return wrappedMuxerFactory.getSupportedSampleMimeTypes(trackType);
-    }
-  }
-
-  private static final class FrameBlockingMuxer implements Muxer {
-    interface Listener {
-      void onFrameBlocked();
-    }
-
-    private final Muxer wrappedMuxer;
-    private final FrameBlockingMuxer.Listener listener;
-
-    private boolean notifiedListener;
-    @Nullable private TrackToken videoTrackToken;
-
-    private FrameBlockingMuxer(Muxer wrappedMuxer, FrameBlockingMuxer.Listener listener) {
-      this.wrappedMuxer = wrappedMuxer;
-      this.listener = listener;
-    }
-
-    @Override
-    public TrackToken addTrack(Format format) throws MuxerException {
-      TrackToken trackToken = wrappedMuxer.addTrack(format);
-      if (MimeTypes.isVideo(format.sampleMimeType)) {
-        videoTrackToken = trackToken;
-      }
-      return trackToken;
-    }
-
-    @Override
-    public void writeSampleData(TrackToken trackToken, ByteBuffer data, BufferInfo bufferInfo)
-        throws MuxerException {
-      if (trackToken == videoTrackToken
-          && bufferInfo.presentationTimeUs >= DEFAULT_PRESENTATION_TIME_US_TO_BLOCK_FRAME) {
-        if (!notifiedListener) {
-          listener.onFrameBlocked();
-          notifiedListener = true;
-        }
-        return;
-      }
-      wrappedMuxer.writeSampleData(trackToken, data, bufferInfo);
-    }
-
-    @Override
-    public void addMetadataEntry(Metadata.Entry metadataEntry) {
-      wrappedMuxer.addMetadataEntry(metadataEntry);
-    }
-
-    @Override
-    public void close() throws MuxerException {
-      wrappedMuxer.close();
-    }
+        || (Util.SDK_INT == 27 && Ascii.equalsIgnoreCase(Build.MODEL, "vivo 1820"))
+        || (Util.SDK_INT == 28 && Ascii.equalsIgnoreCase(Build.MODEL, "vivo 1901"))
+        || (Util.SDK_INT == 28 && Ascii.equalsIgnoreCase(Build.MODEL, "vivo 1906"));
   }
 }

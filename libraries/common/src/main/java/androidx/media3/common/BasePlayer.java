@@ -15,15 +15,14 @@
  */
 package androidx.media3.common;
 
-import static androidx.annotation.VisibleForTesting.PROTECTED;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
 
 import androidx.annotation.Nullable;
-import androidx.annotation.VisibleForTesting;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import com.google.common.collect.ImmutableList;
+import com.google.errorprone.annotations.ForOverride;
 import java.util.List;
 
 /** Abstract base {@link Player} which implements common implementation independent methods. */
@@ -147,36 +146,9 @@ public abstract class BasePlayer implements Player {
     seekToOffset(getSeekForwardIncrement(), Player.COMMAND_SEEK_FORWARD);
   }
 
-  /**
-   * @deprecated Use {@link #hasPreviousMediaItem()} instead.
-   */
-  @Deprecated
-  @Override
-  public final boolean hasPrevious() {
-    return hasPreviousMediaItem();
-  }
-
-  /**
-   * @deprecated Use {@link #hasPreviousMediaItem()} instead.
-   */
-  @Deprecated
-  @Override
-  public final boolean hasPreviousWindow() {
-    return hasPreviousMediaItem();
-  }
-
   @Override
   public final boolean hasPreviousMediaItem() {
     return getPreviousMediaItemIndex() != C.INDEX_UNSET;
-  }
-
-  /**
-   * @deprecated Use {@link #seekToPreviousMediaItem()} instead.
-   */
-  @Deprecated
-  @Override
-  public final void previous() {
-    seekToPreviousMediaItem();
   }
 
   /**
@@ -303,8 +275,8 @@ public abstract class BasePlayer implements Player {
    * @param seekCommand The {@link Player.Command} used to trigger the seek.
    * @param isRepeatingCurrentItem Whether this seeks repeats the current item.
    */
-  @VisibleForTesting(otherwise = PROTECTED)
-  public abstract void seekTo(
+  @ForOverride
+  protected abstract void seekTo(
       int mediaItemIndex,
       long positionMs,
       @Player.Command int seekCommand,

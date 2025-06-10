@@ -28,12 +28,13 @@ import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.net.Uri;
 import android.os.Handler;
-import androidx.annotation.DoNotInline;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.media3.common.AudioAttributes;
+import androidx.media3.common.audio.AudioManagerCompat;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
+import java.util.Objects;
 
 /**
  * Receives broadcast events indicating changes to the device's audio capabilities, notifying a
@@ -57,7 +58,7 @@ public final class AudioCapabilitiesReceiver {
   private final Listener listener;
   private final Handler handler;
   @Nullable private final AudioDeviceCallbackV23 audioDeviceCallback;
-  @Nullable private final BroadcastReceiver hdmiAudioPlugBroadcastReceiver;
+  private final BroadcastReceiver hdmiAudioPlugBroadcastReceiver;
   @Nullable private final ExternalSurroundSoundSettingObserver externalSurroundSoundSettingObserver;
 
   @Nullable private AudioCapabilities audioCapabilities;
@@ -105,8 +106,7 @@ public final class AudioCapabilitiesReceiver {
     this.routedDevice = routedDevice;
     handler = Util.createHandlerForCurrentOrMainLooper();
     audioDeviceCallback = Util.SDK_INT >= 23 ? new AudioDeviceCallbackV23() : null;
-    hdmiAudioPlugBroadcastReceiver =
-        Util.SDK_INT >= 21 ? new HdmiAudioPlugBroadcastReceiver() : null;
+    hdmiAudioPlugBroadcastReceiver = new HdmiAudioPlugBroadcastReceiver();
     Uri externalSurroundSoundUri = AudioCapabilities.getExternalSurroundSoundGlobalSettingUri();
     externalSurroundSoundSettingObserver =
         externalSurroundSoundUri != null
@@ -134,7 +134,7 @@ public final class AudioCapabilitiesReceiver {
    */
   @RequiresApi(23)
   public void setRoutedDevice(@Nullable AudioDeviceInfo routedDevice) {
-    if (Util.areEqual(
+    if (Objects.equals(
         routedDevice, this.routedDevice == null ? null : this.routedDevice.audioDeviceInfo)) {
       return;
     }
@@ -162,16 +162,12 @@ public final class AudioCapabilitiesReceiver {
     if (Util.SDK_INT >= 23 && audioDeviceCallback != null) {
       Api23.registerAudioDeviceCallback(context, audioDeviceCallback, handler);
     }
-    @Nullable Intent stickyIntent = null;
-    if (hdmiAudioPlugBroadcastReceiver != null) {
-      IntentFilter intentFilter = new IntentFilter(AudioManager.ACTION_HDMI_AUDIO_PLUG);
-      stickyIntent =
-          context.registerReceiver(
-              hdmiAudioPlugBroadcastReceiver,
-              intentFilter,
-              /* broadcastPermission= */ null,
-              handler);
-    }
+    Intent stickyIntent =
+        context.registerReceiver(
+            hdmiAudioPlugBroadcastReceiver,
+            new IntentFilter(AudioManager.ACTION_HDMI_AUDIO_PLUG),
+            /* broadcastPermission= */ null,
+            handler);
     audioCapabilities =
         AudioCapabilities.getCapabilitiesInternal(
             context, stickyIntent, audioAttributes, routedDevice);
@@ -190,9 +186,7 @@ public final class AudioCapabilitiesReceiver {
     if (Util.SDK_INT >= 23 && audioDeviceCallback != null) {
       Api23.unregisterAudioDeviceCallback(context, audioDeviceCallback);
     }
-    if (hdmiAudioPlugBroadcastReceiver != null) {
-      context.unregisterReceiver(hdmiAudioPlugBroadcastReceiver);
-    }
+    context.unregisterReceiver(hdmiAudioPlugBroadcastReceiver);
     if (externalSurroundSoundSettingObserver != null) {
       externalSurroundSoundSettingObserver.unregister();
     }
@@ -266,18 +260,14 @@ public final class AudioCapabilitiesReceiver {
   @RequiresApi(23)
   private static final class Api23 {
 
-    @DoNotInline
     public static void registerAudioDeviceCallback(
         Context context, AudioDeviceCallback callback, Handler handler) {
-      AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-      checkNotNull(audioManager).registerAudioDeviceCallback(callback, handler);
+      AudioManagerCompat.getAudioManager(context).registerAudioDeviceCallback(callback, handler);
     }
 
-    @DoNotInline
     public static void unregisterAudioDeviceCallback(
         Context context, AudioDeviceCallback callback) {
-      AudioManager audioManager = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
-      checkNotNull(audioManager).unregisterAudioDeviceCallback(callback);
+      AudioManagerCompat.getAudioManager(context).unregisterAudioDeviceCallback(callback);
     }
 
     private Api23() {}

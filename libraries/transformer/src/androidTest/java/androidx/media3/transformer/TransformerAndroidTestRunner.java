@@ -25,6 +25,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkCapabilities;
 import android.net.NetworkInfo;
 import android.net.Uri;
+import android.os.Build;
 import androidx.annotation.Nullable;
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
@@ -273,7 +274,8 @@ public class TransformerAndroidTestRunner {
    */
   public ExportTestResult run(String testId, EditedMediaItem editedMediaItem) throws Exception {
     Composition composition =
-        new Composition.Builder(new EditedMediaItemSequence(editedMediaItem)).build();
+        new Composition.Builder(new EditedMediaItemSequence.Builder(editedMediaItem).build())
+            .build();
     return run(testId, composition);
   }
 
@@ -326,6 +328,9 @@ public class TransformerAndroidTestRunner {
     }
     for (EditedMediaItemSequence sequence : composition.sequences) {
       for (EditedMediaItem editedMediaItem : sequence.editedMediaItems) {
+        if (editedMediaItem.isGap()) {
+          continue;
+        }
         Uri mediaItemUri = checkNotNull(editedMediaItem.mediaItem.localConfiguration).uri;
         String scheme = mediaItemUri.getScheme();
         if (scheme != null && (scheme.equals("http") || scheme.equals("https"))) {
@@ -369,7 +374,7 @@ public class TransformerAndroidTestRunner {
 
                   @Override
                   public void onFallbackApplied(
-                      MediaItem inputMediaItem,
+                      Composition composition,
                       TransformationRequest originalTransformationRequest,
                       TransformationRequest fallbackTransformationRequest) {
                     // Note: As TransformationRequest only reports the output height but not the
@@ -461,7 +466,7 @@ public class TransformerAndroidTestRunner {
       // ExportTestResult.
       throw interruptedException;
     } catch (Throwable analysisFailure) {
-      if (Util.SDK_INT == 21 && Ascii.toLowerCase(Util.MODEL).contains("nexus")) {
+      if (Util.SDK_INT == 21 && Ascii.toLowerCase(Build.MODEL).contains("nexus")) {
         // b/233584640, b/230093713
         Log.i(TAG, testId + ": Skipping SSIM calculation due to known device-specific issue");
       } else {

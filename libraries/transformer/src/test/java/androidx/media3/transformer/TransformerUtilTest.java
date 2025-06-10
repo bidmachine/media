@@ -63,7 +63,8 @@ public final class TransformerUtilTest {
     EditedMediaItem editedMediaItem =
         new EditedMediaItem.Builder(mediaItem).setEffects(effects).build();
     Composition composition =
-        new Composition.Builder(new EditedMediaItemSequence(editedMediaItem)).build();
+        new Composition.Builder(new EditedMediaItemSequence.Builder(editedMediaItem).build())
+            .build();
     MuxerWrapper muxerWrapper =
         new MuxerWrapper(
             temporaryFolder.newFile().getPath(),
@@ -71,8 +72,7 @@ public final class TransformerUtilTest {
             new NoOpMuxerListenerImpl(),
             MUXER_MODE_DEFAULT,
             /* dropSamplesBeforeFirstVideoSample= */ false,
-            /* appendVideoFormat= */ null,
-            Transformer.DEFAULT_MAX_DELAY_BETWEEN_MUXER_SAMPLES_MS);
+            /* appendVideoFormat= */ null);
 
     assertThat(
             shouldTranscodeVideo(
@@ -97,7 +97,8 @@ public final class TransformerUtilTest {
     EditedMediaItem editedMediaItem =
         new EditedMediaItem.Builder(mediaItem).setEffects(effects).build();
     Composition composition =
-        new Composition.Builder(new EditedMediaItemSequence(editedMediaItem)).build();
+        new Composition.Builder(new EditedMediaItemSequence.Builder(editedMediaItem).build())
+            .build();
     MuxerWrapper muxerWrapper =
         new MuxerWrapper(
             temporaryFolder.newFile().getPath(),
@@ -105,8 +106,7 @@ public final class TransformerUtilTest {
             new NoOpMuxerListenerImpl(),
             MUXER_MODE_DEFAULT,
             /* dropSamplesBeforeFirstVideoSample= */ false,
-            /* appendVideoFormat= */ null,
-            Transformer.DEFAULT_MAX_DELAY_BETWEEN_MUXER_SAMPLES_MS);
+            /* appendVideoFormat= */ null);
 
     assertThat(
             shouldTranscodeVideo(
@@ -124,6 +124,9 @@ public final class TransformerUtilTest {
     @Override
     public void onTrackEnded(
         @C.TrackType int trackType, Format format, int averageBitrate, int sampleCount) {}
+
+    @Override
+    public void onSampleWrittenOrDropped() {}
 
     @Override
     public void onEnded(long durationMs, long fileSizeBytes) {}

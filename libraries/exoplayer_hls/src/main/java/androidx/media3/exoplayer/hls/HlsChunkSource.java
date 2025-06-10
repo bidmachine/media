@@ -27,7 +27,6 @@ import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 import androidx.media3.common.C;
 import androidx.media3.common.Format;
-import androidx.media3.common.MimeTypes;
 import androidx.media3.common.TrackGroup;
 import androidx.media3.common.util.TimestampAdjuster;
 import androidx.media3.common.util.UriUtil;
@@ -63,6 +62,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Objects;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
 /** Source of Hls (possibly adaptive) chunks. */
@@ -296,19 +296,23 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
                 /* isForPlayback= */ true)
             : null;
 
-    if (mediaPlaylist == null
-        || mediaPlaylist.segments.isEmpty()
-        || !mediaPlaylist.hasIndependentSegments) {
+    if (mediaPlaylist == null || mediaPlaylist.segments.isEmpty()) {
       return positionUs;
     }
 
-    // Segments start with sync samples (i.e., EXT-X-INDEPENDENT-SEGMENTS is set) and the playlist
-    // is non-empty, so we can use segment start times as sync points. Note that in the rare case
-    // that (a) an adaptive quality switch occurs between the adjustment and the seek being
-    // performed, and (b) segment start times are not aligned across variants, it's possible that
-    // the adjusted position may not be at a sync point when it was intended to be. However, this is
-    // very much an edge case, and getting it wrong is worth it for getting the vast majority of
-    // cases right whilst keeping the implementation relatively simple.
+    // The playlist is non-empty, so we can use segment start times as sync points. We can always
+    // safely assume that the segment contains the positionUs starts with sync samples (even if it
+    // actually doesn't) and set the below firstSyncUs as the start time of that segment, as it
+    // doesn't harm the seeking performance if it is resolved to be the seek position. However, we
+    // should set the secondSyncUs as the start time of the segment after the positionUs only when
+    // we're sure that the segments start with sync samples (i.e., EXT-X-INDEPENDENT-SEGMENTS is
+    // set).
+    //
+    // Note that in the rare case that (a) an adaptive quality switch occurs between the adjustment
+    // and the seek being performed, and (b) segment start times are not aligned across variants,
+    // it's possible that the adjusted position may not be at a sync point when it was intended to
+    // be. However, this is very much an edge case, and getting it wrong is worth it for getting
+    // the vast majority of cases right whilst keeping the implementation relatively simple.
     long startOfPlaylistInPeriodUs =
         mediaPlaylist.startTimeUs - playlistTracker.getInitialStartTimeUs();
     long relativePositionUs = positionUs - startOfPlaylistInPeriodUs;
@@ -320,7 +324,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
             /* stayInBounds= */ true);
     long firstSyncUs = mediaPlaylist.segments.get(segmentIndex).relativeStartTimeUs;
     long secondSyncUs = firstSyncUs;
-    if (segmentIndex != mediaPlaylist.segments.size() - 1) {
+    if (mediaPlaylist.hasIndependentSegments && segmentIndex != mediaPlaylist.segments.size() - 1) {
       secondSyncUs = mediaPlaylist.segments.get(segmentIndex + 1).relativeStartTimeUs;
     }
     return seekParameters.resolveSeekPositionUs(relativePositionUs, firstSyncUs, secondSyncUs)
@@ -368,7 +372,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
       return CHUNK_PUBLICATION_STATE_PRELOAD;
     }
     Uri newUri = Uri.parse(UriUtil.resolve(mediaPlaylist.baseUri, newPart.url));
-    return Util.areEqual(newUri, mediaChunk.dataSpec.uri)
+    return Objects.equals(newUri, mediaChunk.dataSpec.uri)
         ? CHUNK_PUBLICATION_STATE_PUBLISHED
         : CHUNK_PUBLICATION_STATE_REMOVED;
   }
@@ -507,20 +511,14 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
     @Nullable CmcdData.Factory cmcdDataFactory = null;
     if (cmcdConfiguration != null) {
       cmcdDataFactory =
-          new CmcdData.Factory(
-                  cmcdConfiguration,
-                  trackSelection,
-                  max(0, bufferedDurationUs),
-                  /* playbackRate= */ loadingInfo.playbackSpeed,
-                  /* streamingFormat= */ CmcdData.Factory.STREAMING_FORMAT_HLS,
-                  /* isLive= */ !playlist.hasEndTag,
-                  /* didRebuffer= */ loadingInfo.rebufferedSince(lastChunkRequestRealtimeMs),
-                  /* isBufferEmpty= */ queue.isEmpty())
-              .setObjectType(
-                  getIsMuxedAudioAndVideo()
-                      ? CmcdData.Factory.OBJECT_TYPE_MUXED_AUDIO_AND_VIDEO
-                      : CmcdData.Factory.getObjectType(trackSelection));
-
+          new CmcdData.Factory(cmcdConfiguration, CmcdData.STREAMING_FORMAT_HLS)
+              .setTrackSelection(trackSelection)
+              .setBufferedDurationUs(max(0, bufferedDurationUs))
+              .setPlaybackRate(loadingInfo.playbackSpeed)
+              .setIsLive(!playlist.hasEndTag)
+              .setDidRebuffer(loadingInfo.rebufferedSince(lastChunkRequestRealtimeMs))
+              .setIsBufferEmpty(queue.isEmpty())
+              .setChunkDurationUs(segmentBaseHolder.segmentBase.durationUs);
       long nextMediaSequence =
           segmentBaseHolder.partIndex == C.INDEX_UNSET
               ? segmentBaseHolder.mediaSequence + 1
@@ -598,13 +596,6 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
             shouldSpliceIn,
             playerId,
             cmcdDataFactory);
-  }
-
-  private boolean getIsMuxedAudioAndVideo() {
-    Format format = trackGroup.getFormat(trackSelection.getSelectedIndex());
-    String audioMimeType = MimeTypes.getAudioMediaMimeType(format.codecs);
-    String videoMimeType = MimeTypes.getVideoMediaMimeType(format.codecs);
-    return audioMimeType != null && videoMimeType != null;
   }
 
   @Nullable
@@ -933,7 +924,7 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
         new DataSpec.Builder().setUri(keyUri).setFlags(DataSpec.FLAG_ALLOW_GZIP).build();
     if (cmcdDataFactory != null) {
       if (isInitSegment) {
-        cmcdDataFactory.setObjectType(CmcdData.Factory.OBJECT_TYPE_INIT_SEGMENT);
+        cmcdDataFactory.setObjectType(CmcdData.OBJECT_TYPE_INIT_SEGMENT);
       }
       CmcdData cmcdData = cmcdDataFactory.createCmcdData();
       dataSpec = cmcdData.addToDataSpec(dataSpec);

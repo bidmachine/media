@@ -30,9 +30,9 @@ import android.media.MediaCodec;
 import android.media.MediaCrypto;
 import android.media.MediaFormat;
 import android.net.Uri;
+import android.opengl.GLES20;
 import android.view.Surface;
 import androidx.annotation.IntDef;
-import androidx.annotation.RequiresApi;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import com.google.errorprone.annotations.InlineMe;
@@ -328,8 +328,8 @@ public final class C {
   /**
    * Stream types for an {@link android.media.AudioTrack}. One of {@link #STREAM_TYPE_ALARM}, {@link
    * #STREAM_TYPE_DTMF}, {@link #STREAM_TYPE_MUSIC}, {@link #STREAM_TYPE_NOTIFICATION}, {@link
-   * #STREAM_TYPE_RING}, {@link #STREAM_TYPE_SYSTEM}, {@link #STREAM_TYPE_VOICE_CALL} or {@link
-   * #STREAM_TYPE_DEFAULT}.
+   * #STREAM_TYPE_RING}, {@link #STREAM_TYPE_SYSTEM}, {@link #STREAM_TYPE_VOICE_CALL}, {@link
+   * #STREAM_TYPE_ACCESSIBILITY} or {@link #STREAM_TYPE_DEFAULT}.
    */
   // @Target list includes both 'default' targets and TYPE_USE, to ensure backwards compatibility
   // with Kotlin usages from before TYPE_USE was added.
@@ -346,6 +346,7 @@ public final class C {
     STREAM_TYPE_RING,
     STREAM_TYPE_SYSTEM,
     STREAM_TYPE_VOICE_CALL,
+    STREAM_TYPE_ACCESSIBILITY,
     STREAM_TYPE_DEFAULT
   })
   public @interface StreamType {}
@@ -370,6 +371,10 @@ public final class C {
 
   /** See {@link AudioManager#STREAM_VOICE_CALL}. */
   @UnstableApi public static final int STREAM_TYPE_VOICE_CALL = AudioManager.STREAM_VOICE_CALL;
+
+  /** See {@link AudioManager#STREAM_ACCESSIBILITY}. */
+  @UnstableApi
+  public static final int STREAM_TYPE_ACCESSIBILITY = AudioManager.STREAM_ACCESSIBILITY;
 
   /** The default stream type used by audio renderers. Equal to {@link #STREAM_TYPE_MUSIC}. */
   @UnstableApi public static final int STREAM_TYPE_DEFAULT = STREAM_TYPE_MUSIC;
@@ -613,6 +618,28 @@ public final class C {
   public static final int ALLOW_CAPTURE_BY_SYSTEM = AudioAttributes.ALLOW_CAPTURE_BY_SYSTEM;
 
   /**
+   * Flags which represent a set of video codecs.
+   *
+   * <p>Possible flag values are:
+   *
+   * <ul>
+   *   <li>{@link #VIDEO_CODEC_FLAG_H264}
+   *   <li>{@link #VIDEO_CODEC_FLAG_H265}
+   * </ul>
+   */
+  @UnstableApi
+  @Documented
+  @Retention(RetentionPolicy.SOURCE)
+  @Target(TYPE_USE)
+  @IntDef(
+      flag = true,
+      value = {VIDEO_CODEC_FLAG_H264, VIDEO_CODEC_FLAG_H265})
+  public @interface VideoCodecFlags {}
+
+  @UnstableApi public static final int VIDEO_CODEC_FLAG_H264 = 1;
+  @UnstableApi public static final int VIDEO_CODEC_FLAG_H265 = 2;
+
+  /**
    * Flags which can apply to a buffer containing a media sample.
    *
    * <p>Possible flag values are:
@@ -620,6 +647,7 @@ public final class C {
    * <ul>
    *   <li>{@link #BUFFER_FLAG_KEY_FRAME}
    *   <li>{@link #BUFFER_FLAG_END_OF_STREAM}
+   *   <li>{@link #BUFFER_FLAG_NOT_DEPENDED_ON}
    *   <li>{@link #BUFFER_FLAG_FIRST_SAMPLE}
    *   <li>{@link #BUFFER_FLAG_LAST_SAMPLE}
    *   <li>{@link #BUFFER_FLAG_ENCRYPTED}
@@ -634,6 +662,7 @@ public final class C {
       value = {
         BUFFER_FLAG_KEY_FRAME,
         BUFFER_FLAG_END_OF_STREAM,
+        BUFFER_FLAG_NOT_DEPENDED_ON,
         BUFFER_FLAG_FIRST_SAMPLE,
         BUFFER_FLAG_HAS_SUPPLEMENTAL_DATA,
         BUFFER_FLAG_LAST_SAMPLE,
@@ -647,6 +676,9 @@ public final class C {
   /** Flag for empty buffers that signal that the end of the stream was reached. */
   @UnstableApi
   public static final int BUFFER_FLAG_END_OF_STREAM = MediaCodec.BUFFER_FLAG_END_OF_STREAM;
+
+  /** Indicates that no other buffers depend on the data in this buffer. */
+  @UnstableApi public static final int BUFFER_FLAG_NOT_DEPENDED_ON = 1 << 26; // 0x04000000
 
   /** Indicates that a buffer is known to contain the first media sample of the stream. */
   @UnstableApi public static final int BUFFER_FLAG_FIRST_SAMPLE = 1 << 27; // 0x08000000
@@ -666,6 +698,7 @@ public final class C {
   /** A non-realtime (as fast as possible) {@linkplain MediaFormat#KEY_PRIORITY codec priority}. */
   @UnstableApi public static final int MEDIA_CODEC_PRIORITY_NON_REALTIME = 1;
 
+  // LINT.IfChange
   /**
    * Video decoder output modes. Possible modes are {@link #VIDEO_OUTPUT_MODE_NONE}, {@link
    * #VIDEO_OUTPUT_MODE_YUV} and {@link #VIDEO_OUTPUT_MODE_SURFACE_YUV}.
@@ -685,6 +718,11 @@ public final class C {
 
   /** Video decoder output mode that renders 4:2:0 YUV planes directly to a surface. */
   @UnstableApi public static final int VIDEO_OUTPUT_MODE_SURFACE_YUV = 1;
+
+  // LINT.ThenChange(
+  //     ../../../../../../../decoder_av1/src/main/jni/gav1_jni.cc,
+  //     ../../../../../../../decoder_vp9/src/main/jni/vpx_jni.cc
+  // )
 
   /**
    * Video scaling modes for {@link MediaCodec}-based renderers. One of {@link
@@ -776,6 +814,8 @@ public final class C {
    * preference.
    */
   public static final int SELECTION_FLAG_AUTOSELECT = 1 << 2; // 4
+
+  // LINT.ThenChange("util/Util.java:selection_flags")
 
   /** Represents an undetermined language as an ISO 639-2 language code. */
   public static final String LANGUAGE_UNDETERMINED = "und";
@@ -1092,7 +1132,8 @@ public final class C {
   /**
    * The stereo mode for 360/3D/VR videos. One of {@link Format#NO_VALUE}, {@link
    * #STEREO_MODE_MONO}, {@link #STEREO_MODE_TOP_BOTTOM}, {@link #STEREO_MODE_LEFT_RIGHT} or {@link
-   * #STEREO_MODE_STEREO_MESH}.
+   * #STEREO_MODE_STEREO_MESH}, {@link #STEREO_MODE_INTERLEAVED_LEFT_PRIMARY}, {@link
+   * #STEREO_MODE_INTERLEAVED_RIGHT_PRIMARY}.
    */
   @UnstableApi
   @Documented
@@ -1103,7 +1144,9 @@ public final class C {
     STEREO_MODE_MONO,
     STEREO_MODE_TOP_BOTTOM,
     STEREO_MODE_LEFT_RIGHT,
-    STEREO_MODE_STEREO_MESH
+    STEREO_MODE_STEREO_MESH,
+    STEREO_MODE_INTERLEAVED_LEFT_PRIMARY,
+    STEREO_MODE_INTERLEAVED_RIGHT_PRIMARY
   })
   public @interface StereoMode {}
 
@@ -1121,6 +1164,18 @@ public final class C {
    * 360/3D/VR videos.
    */
   @UnstableApi public static final int STEREO_MODE_STEREO_MESH = 3;
+
+  /**
+   * Indicates interleaved stereo layout with the left view being the primary view, used with
+   * 360/3D/VR videos.
+   */
+  @UnstableApi public static final int STEREO_MODE_INTERLEAVED_LEFT_PRIMARY = 4;
+
+  /**
+   * Indicates interleaved stereo layout with the right view being the primary view, used with
+   * 360/3D/VR videos.
+   */
+  @UnstableApi public static final int STEREO_MODE_INTERLEAVED_RIGHT_PRIMARY = 5;
 
   // LINT.IfChange(color_space)
   /**
@@ -1142,6 +1197,11 @@ public final class C {
 
   /** See {@link MediaFormat#COLOR_STANDARD_BT2020}. */
   @UnstableApi public static final int COLOR_SPACE_BT2020 = MediaFormat.COLOR_STANDARD_BT2020;
+
+  // LINT.ThenChange(
+  //   util/MediaFormatUtil.java:color_space,
+  //   ColorInfo.java:color_space,
+  // )
 
   // LINT.IfChange(color_transfer)
   /**
@@ -1190,6 +1250,14 @@ public final class C {
   /** See {@link MediaFormat#COLOR_TRANSFER_HLG}. */
   @UnstableApi public static final int COLOR_TRANSFER_HLG = MediaFormat.COLOR_TRANSFER_HLG;
 
+  // LINT.ThenChange(
+  //   util/MediaFormatUtil.java:color_transfer,
+  //   ColorInfo.java:color_transfer,
+  // ../../../../../../../effect/src/main/assets/shaders/fragment_shader_transformation_sdr_external_es2.glsl:color_transfer,
+  // ../../../../../../../effect/src/main/assets/shaders/fragment_shader_transformation_external_yuv_es3.glsl:color_transfer,
+  // ../../../../../../../effect/src/main/assets/shaders/fragment_shader_oetf_es3.glsl:color_transfer,
+  // )
+
   // LINT.IfChange(color_range)
   /**
    * Video color range. One of {@link Format#NO_VALUE}, {@link #COLOR_RANGE_LIMITED} or {@link
@@ -1207,6 +1275,11 @@ public final class C {
 
   /** See {@link MediaFormat#COLOR_RANGE_FULL}. */
   @UnstableApi public static final int COLOR_RANGE_FULL = MediaFormat.COLOR_RANGE_FULL;
+
+  // LINT.ThenChange(
+  //   util/MediaFormatUtil.java:color_range,
+  //   ColorInfo.java:color_range,
+  // )
 
   /** Video projection types. */
   @UnstableApi
@@ -1428,7 +1501,8 @@ public final class C {
         ROLE_FLAG_ENHANCED_DIALOG_INTELLIGIBILITY,
         ROLE_FLAG_TRANSCRIBES_DIALOG,
         ROLE_FLAG_EASY_TO_READ,
-        ROLE_FLAG_TRICK_PLAY
+        ROLE_FLAG_TRICK_PLAY,
+        ROLE_FLAG_AUXILIARY
       })
   public @interface RoleFlags {}
 
@@ -1492,6 +1566,62 @@ public final class C {
 
   /** Indicates the track is intended for trick play. */
   public static final int ROLE_FLAG_TRICK_PLAY = 1 << 14;
+
+  /**
+   * Indicates an auxiliary track. An auxiliary track provides additional information about other
+   * tracks and is generally not meant for stand-alone playback, but rather for further processing
+   * in conjunction with other tracks (for example, a track with depth information).
+   */
+  public static final int ROLE_FLAG_AUXILIARY = 1 << 15;
+
+  // LINT.ThenChange("util/Util.java:role_flags")
+
+  /**
+   * {@linkplain #ROLE_FLAG_AUXILIARY Auxiliary track types}. One of {@link
+   * #AUXILIARY_TRACK_TYPE_UNDEFINED}, {@link #AUXILIARY_TRACK_TYPE_ORIGINAL}, {@link
+   * #AUXILIARY_TRACK_TYPE_DEPTH_LINEAR}, {@link #AUXILIARY_TRACK_TYPE_DEPTH_INVERSE}, {@link
+   * #AUXILIARY_TRACK_TYPE_DEPTH_METADATA}.
+   */
+  @UnstableApi
+  @Documented
+  @Retention(RetentionPolicy.SOURCE)
+  @Target({FIELD, METHOD, PARAMETER, LOCAL_VARIABLE, TYPE_USE})
+  @IntDef({
+    AUXILIARY_TRACK_TYPE_UNDEFINED,
+    AUXILIARY_TRACK_TYPE_ORIGINAL,
+    AUXILIARY_TRACK_TYPE_DEPTH_LINEAR,
+    AUXILIARY_TRACK_TYPE_DEPTH_INVERSE,
+    AUXILIARY_TRACK_TYPE_DEPTH_METADATA
+  })
+  public @interface AuxiliaryTrackType {}
+
+  // LINT.IfChange(auxiliary_track_type)
+  /** Not an auxiliary track or an auxiliary track with an undefined type. */
+  @UnstableApi public static final int AUXILIARY_TRACK_TYPE_UNDEFINED = 0;
+
+  /** The original video track without any depth based effects applied. */
+  @UnstableApi public static final int AUXILIARY_TRACK_TYPE_ORIGINAL = 1;
+
+  /**
+   * A linear encoded depth video track.
+   *
+   * <p>See https://developer.android.com/static/media/camera/camera2/Dynamic-depth-v1.0.pdf for
+   * linear depth encoding.
+   */
+  @UnstableApi public static final int AUXILIARY_TRACK_TYPE_DEPTH_LINEAR = 2;
+
+  /**
+   * An inverse encoded depth video track.
+   *
+   * <p>See https://developer.android.com/static/media/camera/camera2/Dynamic-depth-v1.0.pdf for
+   * inverse depth encoding.
+   */
+  @UnstableApi public static final int AUXILIARY_TRACK_TYPE_DEPTH_INVERSE = 3;
+
+  /** A timed metadata of depth video track. */
+  @UnstableApi public static final int AUXILIARY_TRACK_TYPE_DEPTH_METADATA = 4;
+
+  // LINT.ThenChange("util/Util.java:auxiliary_track_type")
 
   /**
    * Level of support for a format. One of {@link #FORMAT_HANDLED}, {@link
@@ -1595,6 +1725,40 @@ public final class C {
   @UnstableApi public static final int FIRST_FRAME_RENDERED = 3;
 
   /**
+   * Texture filtering algorithm for minification.
+   *
+   * <p>Possible values are:
+   *
+   * <ul>
+   *   <li>{@link #TEXTURE_MIN_FILTER_LINEAR}
+   *   <li>{@link #TEXTURE_MIN_FILTER_LINEAR_MIPMAP_LINEAR}
+   * </ul>
+   *
+   * <p>The algorithms are ordered by increasing visual quality and computational cost.
+   */
+  @UnstableApi
+  @Documented
+  @Retention(RetentionPolicy.SOURCE)
+  @Target(TYPE_USE)
+  @IntDef({TEXTURE_MIN_FILTER_LINEAR, TEXTURE_MIN_FILTER_LINEAR_MIPMAP_LINEAR})
+  public @interface TextureMinFilter {}
+
+  /**
+   * Returns the weighted average of the four texture elements that are closest to the specified
+   * texture coordinates.
+   */
+  @UnstableApi public static final int TEXTURE_MIN_FILTER_LINEAR = GLES20.GL_LINEAR;
+
+  /**
+   * Chooses the two mipmaps that most closely match the size of the pixel being textured and uses
+   * the {@link C#TEXTURE_MIN_FILTER_LINEAR} criterion (a weighted average of the texture elements
+   * that are closest to the specified texture coordinates) to produce a texture value from each
+   * mipmap. The final texture value is a weighted average of those two values.
+   */
+  @UnstableApi
+  public static final int TEXTURE_MIN_FILTER_LINEAR_MIPMAP_LINEAR = GLES20.GL_LINEAR_MIPMAP_LINEAR;
+
+  /**
    * @deprecated Use {@link Util#usToMs(long)}.
    */
   @UnstableApi
@@ -1626,7 +1790,6 @@ public final class C {
       replacement = "Util.generateAudioSessionIdV21(context)",
       imports = {"androidx.media3.common.util.Util"})
   @Deprecated
-  @RequiresApi(21)
   public static int generateAudioSessionIdV21(Context context) {
     return Util.generateAudioSessionIdV21(context);
   }

@@ -15,14 +15,19 @@
  */
 package androidx.media3.container;
 
-import android.os.Parcel;
-import android.os.Parcelable;
+import static androidx.media3.common.util.Assertions.checkArgument;
+import static androidx.media3.common.util.Assertions.checkState;
+
 import androidx.annotation.Nullable;
 import androidx.media3.common.Metadata;
+import androidx.media3.common.util.ParsableByteArray;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
+import com.google.common.base.Joiner;
 import com.google.common.primitives.Ints;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * Stores extensible metadata with handler type 'mdta'. See also the QuickTime File Format
@@ -34,8 +39,31 @@ public final class MdtaMetadataEntry implements Metadata.Entry {
   /** Key for the capture frame rate (in frames per second). */
   public static final String KEY_ANDROID_CAPTURE_FPS = "com.android.capture.fps";
 
+  // See the MP4 With Auxiliary Tracks Extension (MP4-AT) file format at
+  // https://developer.android.com/media/platform/mp4-at-file-format.
+  /** Key for auxiliary tracks extension box (axte) offset. */
+  public static final String KEY_AUXILIARY_TRACKS_OFFSET = "auxiliary.tracks.offset";
+
+  /** Key for auxiliary tracks extension box (axte) length. */
+  public static final String KEY_AUXILIARY_TRACKS_LENGTH = "auxiliary.tracks.length";
+
+  /** Key for auxiliary tracks map. */
+  public static final String KEY_AUXILIARY_TRACKS_MAP = "auxiliary.tracks.map";
+
+  /** Key for whether auxiliary tracks samples are interleaved. */
+  public static final String KEY_AUXILIARY_TRACKS_INTERLEAVED = "auxiliary.tracks.interleaved";
+
+  /** The auxiliary tracks samples are not interleaved and are in the axte.mdat box. */
+  public static final byte AUXILIARY_TRACKS_SAMPLES_NOT_INTERLEAVED = 0;
+
+  /** The auxiliary tracks samples are interleaved in the primary video track’s mdat box. */
+  public static final byte AUXILIARY_TRACKS_SAMPLES_INTERLEAVED = 1;
+
   /** The default locale indicator which implies all speakers in all countries. */
   public static final int DEFAULT_LOCALE_INDICATOR = 0;
+
+  /** The type indicator to use when no type needs to be indicated. */
+  public static final int TYPE_INDICATOR_RESERVED = 0;
 
   /** The type indicator for UTF-8 string. */
   public static final int TYPE_INDICATOR_STRING = 1;
@@ -45,6 +73,12 @@ public final class MdtaMetadataEntry implements Metadata.Entry {
 
   /** The type indicator for 32-bit signed integer. */
   public static final int TYPE_INDICATOR_INT32 = 67;
+
+  /** The type indicator for an 8-bit unsigned integer. */
+  public static final int TYPE_INDICATOR_8_BIT_UNSIGNED_INT = 75;
+
+  /** The type indicator for 64-bit unsigned integer. */
+  public static final int TYPE_INDICATOR_UNSIGNED_INT64 = 78;
 
   /** The metadata key name. */
   public final String key;
@@ -68,17 +102,26 @@ public final class MdtaMetadataEntry implements Metadata.Entry {
 
   /** Creates a new metadata entry for the specified metadata key/value. */
   public MdtaMetadataEntry(String key, byte[] value, int localeIndicator, int typeIndicator) {
+    validateData(key, value, typeIndicator);
     this.key = key;
     this.value = value;
     this.localeIndicator = localeIndicator;
     this.typeIndicator = typeIndicator;
   }
 
-  private MdtaMetadataEntry(Parcel in) {
-    key = Util.castNonNull(in.readString());
-    value = Util.castNonNull(in.createByteArray());
-    localeIndicator = in.readInt();
-    typeIndicator = in.readInt();
+  /**
+   * Returns the auxiliary track types from the {@linkplain #KEY_AUXILIARY_TRACKS_MAP auxiliary
+   * tracks map} metadata.
+   */
+  public List<Integer> getAuxiliaryTrackTypesFromMap() {
+    checkState(key.equals(KEY_AUXILIARY_TRACKS_MAP), "Metadata is not an auxiliary tracks map");
+    // Value has 1 byte version, 1 byte track count, n bytes track types.
+    int numberOfTracks = value[1];
+    List<Integer> trackTypes = new ArrayList<>();
+    for (int i = 0; i < numberOfTracks; i++) {
+      trackTypes.add((int) value[i + 2]);
+    }
+    return trackTypes;
   }
 
   @Override
@@ -119,6 +162,18 @@ public final class MdtaMetadataEntry implements Metadata.Entry {
       case TYPE_INDICATOR_INT32:
         formattedValue = String.valueOf(Ints.fromByteArray(value));
         break;
+      case TYPE_INDICATOR_8_BIT_UNSIGNED_INT:
+        formattedValue = String.valueOf(Byte.toUnsignedInt(value[0]));
+        break;
+      case TYPE_INDICATOR_UNSIGNED_INT64:
+        formattedValue = String.valueOf(new ParsableByteArray(value).readUnsignedLongToLong());
+        break;
+      case TYPE_INDICATOR_RESERVED:
+        if (key.equals(KEY_AUXILIARY_TRACKS_MAP)) {
+          formattedValue = getFormattedValueForAuxiliaryTracksMap(getAuxiliaryTrackTypesFromMap());
+          break;
+        }
+      // fall through
       default:
         formattedValue = Util.toHexString(value);
     }
@@ -126,32 +181,34 @@ public final class MdtaMetadataEntry implements Metadata.Entry {
     return "mdta: key=" + key + ", value=" + formattedValue;
   }
 
-  // Parcelable implementation.
-
-  @Override
-  public void writeToParcel(Parcel dest, int flags) {
-    dest.writeString(key);
-    dest.writeByteArray(value);
-    dest.writeInt(localeIndicator);
-    dest.writeInt(typeIndicator);
+  private static void validateData(String key, byte[] value, int typeIndicator) {
+    switch (key) {
+      case KEY_ANDROID_CAPTURE_FPS:
+        checkArgument(typeIndicator == TYPE_INDICATOR_FLOAT32 && value.length == 4);
+        break;
+      case KEY_AUXILIARY_TRACKS_OFFSET:
+      case KEY_AUXILIARY_TRACKS_LENGTH:
+        checkArgument(typeIndicator == TYPE_INDICATOR_UNSIGNED_INT64 && value.length == 8);
+        break;
+      case KEY_AUXILIARY_TRACKS_MAP:
+        checkArgument(typeIndicator == TYPE_INDICATOR_RESERVED);
+        break;
+      case KEY_AUXILIARY_TRACKS_INTERLEAVED:
+        checkArgument(
+            typeIndicator == TYPE_INDICATOR_8_BIT_UNSIGNED_INT
+                && value.length == 1
+                && (value[0] == AUXILIARY_TRACKS_SAMPLES_NOT_INTERLEAVED
+                    || value[0] == AUXILIARY_TRACKS_SAMPLES_INTERLEAVED));
+        break;
+      default:
+        // Ignore custom keys.
+    }
   }
 
-  @Override
-  public int describeContents() {
-    return 0;
+  private static String getFormattedValueForAuxiliaryTracksMap(List<Integer> trackTypes) {
+    StringBuilder sb = new StringBuilder();
+    sb.append("track types = ");
+    Joiner.on(',').appendTo(sb, trackTypes);
+    return sb.toString();
   }
-
-  public static final Parcelable.Creator<MdtaMetadataEntry> CREATOR =
-      new Parcelable.Creator<MdtaMetadataEntry>() {
-
-        @Override
-        public MdtaMetadataEntry createFromParcel(Parcel in) {
-          return new MdtaMetadataEntry(in);
-        }
-
-        @Override
-        public MdtaMetadataEntry[] newArray(int size) {
-          return new MdtaMetadataEntry[size];
-        }
-      };
 }

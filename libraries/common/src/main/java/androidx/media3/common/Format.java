@@ -16,6 +16,7 @@
 package androidx.media3.common;
 
 import static androidx.media3.common.util.Assertions.checkState;
+import static com.google.common.math.DoubleMath.fuzzyEquals;
 import static java.lang.annotation.ElementType.TYPE_USE;
 
 import android.os.Bundle;
@@ -27,6 +28,7 @@ import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Lists;
 import com.google.errorprone.annotations.CanIgnoreReturnValue;
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
@@ -101,6 +103,7 @@ import java.util.UUID;
  *   <li>{@link #projectionData}
  *   <li>{@link #stereoMode}
  *   <li>{@link #colorInfo}
+ *   <li>{@link #maxSubLayers}
  * </ul>
  *
  * <h2 id="audio-formats">Fields relevant to audio formats</h2>
@@ -146,6 +149,7 @@ public final class Format {
     @Nullable private String language;
     private @C.SelectionFlags int selectionFlags;
     private @C.RoleFlags int roleFlags;
+    private @C.AuxiliaryTrackType int auxiliaryTrackType;
     private int averageBitrate;
     private int peakBitrate;
     @Nullable private String codecs;
@@ -164,6 +168,7 @@ public final class Format {
     @Nullable private List<byte[]> initializationData;
     @Nullable private DrmInitData drmInitData;
     private long subsampleOffsetUs;
+    private boolean hasPrerollSamples;
 
     // Video specific.
 
@@ -175,6 +180,7 @@ public final class Format {
     @Nullable private byte[] projectionData;
     private @C.StereoMode int stereoMode;
     @Nullable private ColorInfo colorInfo;
+    private int maxSubLayers;
 
     // Audio specific.
 
@@ -213,6 +219,7 @@ public final class Format {
       frameRate = NO_VALUE;
       pixelWidthHeightRatio = 1.0f;
       stereoMode = NO_VALUE;
+      maxSubLayers = NO_VALUE;
       // Audio specific.
       channelCount = NO_VALUE;
       sampleRate = NO_VALUE;
@@ -225,6 +232,7 @@ public final class Format {
       tileCountVertical = NO_VALUE;
       // Provided by the source.
       cryptoType = C.CRYPTO_TYPE_NONE;
+      auxiliaryTrackType = C.AUXILIARY_TRACK_TYPE_UNDEFINED;
     }
 
     /**
@@ -253,6 +261,7 @@ public final class Format {
       this.initializationData = format.initializationData;
       this.drmInitData = format.drmInitData;
       this.subsampleOffsetUs = format.subsampleOffsetUs;
+      this.hasPrerollSamples = format.hasPrerollSamples;
       // Video specific.
       this.width = format.width;
       this.height = format.height;
@@ -262,6 +271,7 @@ public final class Format {
       this.projectionData = format.projectionData;
       this.stereoMode = format.stereoMode;
       this.colorInfo = format.colorInfo;
+      this.maxSubLayers = format.maxSubLayers;
       // Audio specific.
       this.channelCount = format.channelCount;
       this.sampleRate = format.sampleRate;
@@ -360,12 +370,31 @@ public final class Format {
     /**
      * Sets {@link Format#roleFlags}. The default value is 0.
      *
+     * <p>When {@code roleFlags} includes {@link C#ROLE_FLAG_AUXILIARY}, then the specific {@link
+     * C.AuxiliaryTrackType} can also be {@linkplain #setAuxiliaryTrackType(int) set}.
+     *
      * @param roleFlags The {@link Format#roleFlags}.
      * @return The builder.
      */
     @CanIgnoreReturnValue
     public Builder setRoleFlags(@C.RoleFlags int roleFlags) {
       this.roleFlags = roleFlags;
+      return this;
+    }
+
+    /**
+     * Sets {@link Format#auxiliaryTrackType}. The default value is {@link
+     * C#AUXILIARY_TRACK_TYPE_UNDEFINED}.
+     *
+     * <p>This must be set to a value other than {@link C#AUXILIARY_TRACK_TYPE_UNDEFINED} only when
+     * {@linkplain #setRoleFlags(int) role flags} contains {@link C#ROLE_FLAG_AUXILIARY}.
+     *
+     * @param auxiliaryTrackType The {@link Format#auxiliaryTrackType}.
+     * @return The builder.
+     */
+    @CanIgnoreReturnValue
+    public Builder setAuxiliaryTrackType(@C.AuxiliaryTrackType int auxiliaryTrackType) {
+      this.auxiliaryTrackType = auxiliaryTrackType;
       return this;
     }
 
@@ -521,6 +550,18 @@ public final class Format {
       return this;
     }
 
+    /**
+     * Sets {@link Format#hasPrerollSamples}. The default value is {@code false}.
+     *
+     * @param hasPrerollSamples The {@link Format#hasPrerollSamples}.
+     * @return The builder.
+     */
+    @CanIgnoreReturnValue
+    public Builder setHasPrerollSamples(boolean hasPrerollSamples) {
+      this.hasPrerollSamples = hasPrerollSamples;
+      return this;
+    }
+
     // Video specific.
 
     /**
@@ -619,6 +660,18 @@ public final class Format {
       return this;
     }
 
+    /**
+     * Sets {@link Format#maxSubLayers}. The default value is {@link #NO_VALUE}.
+     *
+     * @param maxSubLayers The {@link Format#maxSubLayers}.
+     * @return The builder.
+     */
+    @CanIgnoreReturnValue
+    public Builder setMaxSubLayers(int maxSubLayers) {
+      this.maxSubLayers = maxSubLayers;
+      return this;
+    }
+
     // Audio specific.
 
     /**
@@ -713,7 +766,7 @@ public final class Format {
     /**
      * Sets {@link Format#tileCountHorizontal}. The default value is {@link #NO_VALUE}.
      *
-     * @param tileCountHorizontal The {@link Format#accessibilityChannel}.
+     * @param tileCountHorizontal The {@link Format#tileCountHorizontal}.
      * @return The builder.
      */
     @CanIgnoreReturnValue
@@ -725,7 +778,7 @@ public final class Format {
     /**
      * Sets {@link Format#tileCountVertical}. The default value is {@link #NO_VALUE}.
      *
-     * @param tileCountVertical The {@link Format#accessibilityChannel}.
+     * @param tileCountVertical The {@link Format#tileCountVertical}.
      * @return The builder.
      */
     @CanIgnoreReturnValue
@@ -823,6 +876,9 @@ public final class Format {
 
   /** Track role flags. */
   public final @C.RoleFlags int roleFlags;
+
+  /** The auxiliary track type. */
+  @UnstableApi public final @C.AuxiliaryTrackType int auxiliaryTrackType;
 
   /**
    * The average bitrate in bits per second, or {@link #NO_VALUE} if unknown or not applicable. The
@@ -927,6 +983,15 @@ public final class Format {
    */
   @UnstableApi public final long subsampleOffsetUs;
 
+  /**
+   * Indicates whether the stream contains preroll samples.
+   *
+   * <p>When this field is set to {@code true}, it means that the stream includes decode-only
+   * samples that occur before the intended playback start position. These samples are necessary for
+   * decoding but are not meant to be rendered and should be skipped after decoding.
+   */
+  @UnstableApi public final boolean hasPrerollSamples;
+
   // Video specific.
 
   /** The width of the video in pixels, or {@link #NO_VALUE} if unknown or not applicable. */
@@ -960,6 +1025,12 @@ public final class Format {
   /** The color metadata associated with the video, or null if not applicable. */
   @UnstableApi @Nullable public final ColorInfo colorInfo;
 
+  /**
+   * The maximum number of temporal scalable sub-layers in the video bitstream, or {@link #NO_VALUE}
+   * if not applicable.
+   */
+  @UnstableApi public final int maxSubLayers;
+
   // Audio specific.
 
   /** The number of audio channels, or {@link #NO_VALUE} if unknown or not applicable. */
@@ -968,7 +1039,10 @@ public final class Format {
   /** The audio sampling rate in Hz, or {@link #NO_VALUE} if unknown or not applicable. */
   public final int sampleRate;
 
-  /** The {@link C.PcmEncoding} for PCM audio. Set to {@link #NO_VALUE} for other media types. */
+  /**
+   * The {@link C.PcmEncoding} for PCM or losslessly compressed audio. Set to {@link #NO_VALUE} for
+   * other media types.
+   */
   @UnstableApi public final @C.PcmEncoding int pcmEncoding;
 
   /**
@@ -1043,7 +1117,14 @@ public final class Format {
       label = builder.label;
     }
     selectionFlags = builder.selectionFlags;
+
+    checkState(
+        builder.auxiliaryTrackType == C.AUXILIARY_TRACK_TYPE_UNDEFINED
+            || (builder.roleFlags & C.ROLE_FLAG_AUXILIARY) != 0,
+        "Auxiliary track type must only be set to a value other than AUXILIARY_TRACK_TYPE_UNDEFINED"
+            + " only when ROLE_FLAG_AUXILIARY is set");
     roleFlags = builder.roleFlags;
+    auxiliaryTrackType = builder.auxiliaryTrackType;
     averageBitrate = builder.averageBitrate;
     peakBitrate = builder.peakBitrate;
     bitrate = peakBitrate != NO_VALUE ? peakBitrate : averageBitrate;
@@ -1060,6 +1141,7 @@ public final class Format {
         builder.initializationData == null ? Collections.emptyList() : builder.initializationData;
     drmInitData = builder.drmInitData;
     subsampleOffsetUs = builder.subsampleOffsetUs;
+    hasPrerollSamples = builder.hasPrerollSamples;
     // Video specific.
     width = builder.width;
     height = builder.height;
@@ -1070,6 +1152,7 @@ public final class Format {
     projectionData = builder.projectionData;
     stereoMode = builder.stereoMode;
     colorInfo = builder.colorInfo;
+    maxSubLayers = builder.maxSubLayers;
     // Audio specific.
     channelCount = builder.channelCount;
     sampleRate = builder.sampleRate;
@@ -1229,6 +1312,7 @@ public final class Format {
       result = 31 * result + (language == null ? 0 : language.hashCode());
       result = 31 * result + selectionFlags;
       result = 31 * result + roleFlags;
+      result = 31 * result + auxiliaryTrackType;
       result = 31 * result + averageBitrate;
       result = 31 * result + peakBitrate;
       result = 31 * result + (codecs == null ? 0 : codecs.hashCode());
@@ -1251,6 +1335,7 @@ public final class Format {
       // [Omitted] projectionData.
       result = 31 * result + stereoMode;
       // [Omitted] colorInfo.
+      result = 31 * result + maxSubLayers;
       // Audio specific.
       result = 31 * result + channelCount;
       result = 31 * result + sampleRate;
@@ -1284,6 +1369,7 @@ public final class Format {
     // Field equality checks ordered by type, with the cheapest checks first.
     return selectionFlags == other.selectionFlags
         && roleFlags == other.roleFlags
+        && auxiliaryTrackType == other.auxiliaryTrackType
         && averageBitrate == other.averageBitrate
         && peakBitrate == other.peakBitrate
         && maxInputSize == other.maxInputSize
@@ -1292,6 +1378,7 @@ public final class Format {
         && height == other.height
         && rotationDegrees == other.rotationDegrees
         && stereoMode == other.stereoMode
+        && maxSubLayers == other.maxSubLayers
         && channelCount == other.channelCount
         && sampleRate == other.sampleRate
         && pcmEncoding == other.pcmEncoding
@@ -1347,6 +1434,7 @@ public final class Format {
     if (format == null) {
       return "null";
     }
+    Joiner commaJoiner = Joiner.on(',');
     StringBuilder builder = new StringBuilder();
     builder.append("id=").append(format.id).append(", mimeType=").append(format.sampleMimeType);
     if (format.containerMimeType != null) {
@@ -1377,17 +1465,23 @@ public final class Format {
         }
       }
       builder.append(", drm=[");
-      Joiner.on(',').appendTo(builder, schemes);
+      commaJoiner.appendTo(builder, schemes);
       builder.append(']');
     }
     if (format.width != NO_VALUE && format.height != NO_VALUE) {
       builder.append(", res=").append(format.width).append("x").append(format.height);
+    }
+    if (!fuzzyEquals(format.pixelWidthHeightRatio, 1, 0.001)) {
+      builder.append(", par=").append(Util.formatInvariant("%.3f", format.pixelWidthHeightRatio));
     }
     if (format.colorInfo != null && format.colorInfo.isValid()) {
       builder.append(", color=").append(format.colorInfo.toLogString());
     }
     if (format.frameRate != NO_VALUE) {
       builder.append(", fps=").append(format.frameRate);
+    }
+    if (format.maxSubLayers != NO_VALUE) {
+      builder.append(", maxSubLayers=").append(format.maxSubLayers);
     }
     if (format.channelCount != NO_VALUE) {
       builder.append(", channels=").append(format.channelCount);
@@ -1400,21 +1494,27 @@ public final class Format {
     }
     if (!format.labels.isEmpty()) {
       builder.append(", labels=[");
-      Joiner.on(',').appendTo(builder, format.labels);
+      commaJoiner.appendTo(
+          builder, Lists.transform(format.labels, l -> l.language + ": " + l.value));
       builder.append("]");
     }
     if (format.selectionFlags != 0) {
       builder.append(", selectionFlags=[");
-      Joiner.on(',').appendTo(builder, Util.getSelectionFlagStrings(format.selectionFlags));
+      commaJoiner.appendTo(builder, Util.getSelectionFlagStrings(format.selectionFlags));
       builder.append("]");
     }
     if (format.roleFlags != 0) {
       builder.append(", roleFlags=[");
-      Joiner.on(',').appendTo(builder, Util.getRoleFlagStrings(format.roleFlags));
+      commaJoiner.appendTo(builder, Util.getRoleFlagStrings(format.roleFlags));
       builder.append("]");
     }
     if (format.customData != null) {
       builder.append(", customData=").append(format.customData);
+    }
+    if ((format.roleFlags & C.ROLE_FLAG_AUXILIARY) != 0) {
+      builder
+          .append(", auxiliaryTrackType=")
+          .append(Util.getAuxiliaryTrackTypeString(format.auxiliaryTrackType));
     }
     return builder.toString();
   }
@@ -1427,7 +1527,8 @@ public final class Format {
   private static final String FIELD_AVERAGE_BITRATE = Util.intToStringMaxRadix(5);
   private static final String FIELD_PEAK_BITRATE = Util.intToStringMaxRadix(6);
   private static final String FIELD_CODECS = Util.intToStringMaxRadix(7);
-  private static final String FIELD_METADATA = Util.intToStringMaxRadix(8);
+  // Do not reuse this key.
+  private static final String UNUSED_FIELD_METADATA = Util.intToStringMaxRadix(8);
   private static final String FIELD_CONTAINER_MIME_TYPE = Util.intToStringMaxRadix(9);
   private static final String FIELD_SAMPLE_MIME_TYPE = Util.intToStringMaxRadix(10);
   private static final String FIELD_MAX_INPUT_SIZE = Util.intToStringMaxRadix(11);
@@ -1452,22 +1553,15 @@ public final class Format {
   private static final String FIELD_TILE_COUNT_HORIZONTAL = Util.intToStringMaxRadix(30);
   private static final String FIELD_TILE_COUNT_VERTICAL = Util.intToStringMaxRadix(31);
   private static final String FIELD_LABELS = Util.intToStringMaxRadix(32);
-
-  /**
-   * @deprecated Use {@link #toBundle(boolean)} instead.
-   */
-  @UnstableApi
-  @Deprecated
-  public Bundle toBundle() {
-    return toBundle(/* excludeMetadata= */ false);
-  }
+  private static final String FIELD_AUXILIARY_TRACK_TYPE = Util.intToStringMaxRadix(33);
+  private static final String FIELD_MAX_SUB_LAYERS = Util.intToStringMaxRadix(34);
 
   /**
    * Returns a {@link Bundle} representing the information stored in this object. If {@code
    * excludeMetadata} is true, {@linkplain Format#metadata metadata} is excluded.
    */
   @UnstableApi
-  public Bundle toBundle(boolean excludeMetadata) {
+  public Bundle toBundle() {
     Bundle bundle = new Bundle();
     bundle.putString(FIELD_ID, id);
     bundle.putString(FIELD_LABEL, label);
@@ -1476,13 +1570,13 @@ public final class Format {
     bundle.putString(FIELD_LANGUAGE, language);
     bundle.putInt(FIELD_SELECTION_FLAGS, selectionFlags);
     bundle.putInt(FIELD_ROLE_FLAGS, roleFlags);
+    if (auxiliaryTrackType != DEFAULT.auxiliaryTrackType) {
+      bundle.putInt(FIELD_AUXILIARY_TRACK_TYPE, auxiliaryTrackType);
+    }
     bundle.putInt(FIELD_AVERAGE_BITRATE, averageBitrate);
     bundle.putInt(FIELD_PEAK_BITRATE, peakBitrate);
     bundle.putString(FIELD_CODECS, codecs);
-    if (!excludeMetadata) {
-      // TODO (internal ref: b/239701618)
-      bundle.putParcelable(FIELD_METADATA, metadata);
-    }
+    // The metadata does not implement toBundle() method, hence can not be added.
     // Container specific.
     bundle.putString(FIELD_CONTAINER_MIME_TYPE, containerMimeType);
     // Sample specific.
@@ -1506,6 +1600,7 @@ public final class Format {
     if (colorInfo != null) {
       bundle.putBundle(FIELD_COLOR_INFO, colorInfo.toBundle());
     }
+    bundle.putInt(FIELD_MAX_SUB_LAYERS, maxSubLayers);
     // Audio specific.
     bundle.putInt(FIELD_CHANNEL_COUNT, channelCount);
     bundle.putInt(FIELD_SAMPLE_RATE, sampleRate);
@@ -1540,10 +1635,11 @@ public final class Format {
         .setLanguage(defaultIfNull(bundle.getString(FIELD_LANGUAGE), DEFAULT.language))
         .setSelectionFlags(bundle.getInt(FIELD_SELECTION_FLAGS, DEFAULT.selectionFlags))
         .setRoleFlags(bundle.getInt(FIELD_ROLE_FLAGS, DEFAULT.roleFlags))
+        .setAuxiliaryTrackType(
+            bundle.getInt(FIELD_AUXILIARY_TRACK_TYPE, DEFAULT.auxiliaryTrackType))
         .setAverageBitrate(bundle.getInt(FIELD_AVERAGE_BITRATE, DEFAULT.averageBitrate))
         .setPeakBitrate(bundle.getInt(FIELD_PEAK_BITRATE, DEFAULT.peakBitrate))
         .setCodecs(defaultIfNull(bundle.getString(FIELD_CODECS), DEFAULT.codecs))
-        .setMetadata(defaultIfNull(bundle.getParcelable(FIELD_METADATA), DEFAULT.metadata))
         // Container specific.
         .setContainerMimeType(
             defaultIfNull(bundle.getString(FIELD_CONTAINER_MIME_TYPE), DEFAULT.containerMimeType))
@@ -1572,7 +1668,8 @@ public final class Format {
         .setPixelWidthHeightRatio(
             bundle.getFloat(FIELD_PIXEL_WIDTH_HEIGHT_RATIO, DEFAULT.pixelWidthHeightRatio))
         .setProjectionData(bundle.getByteArray(FIELD_PROJECTION_DATA))
-        .setStereoMode(bundle.getInt(FIELD_STEREO_MODE, DEFAULT.stereoMode));
+        .setStereoMode(bundle.getInt(FIELD_STEREO_MODE, DEFAULT.stereoMode))
+        .setMaxSubLayers(bundle.getInt(FIELD_MAX_SUB_LAYERS, DEFAULT.maxSubLayers));
     Bundle colorInfoBundle = bundle.getBundle(FIELD_COLOR_INFO);
     if (colorInfoBundle != null) {
       builder.setColorInfo(ColorInfo.fromBundle(colorInfoBundle));

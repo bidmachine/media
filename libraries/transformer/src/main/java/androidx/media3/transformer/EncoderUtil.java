@@ -24,11 +24,9 @@ import android.media.CamcorderProfile;
 import android.media.MediaCodec;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
-import android.media.MediaFormat;
 import android.util.Pair;
 import android.util.Range;
 import android.util.Size;
-import androidx.annotation.DoNotInline;
 import androidx.annotation.GuardedBy;
 import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
@@ -38,7 +36,6 @@ import androidx.media3.common.C.ColorTransfer;
 import androidx.media3.common.ColorInfo;
 import androidx.media3.common.Format;
 import androidx.media3.common.MimeTypes;
-import androidx.media3.common.util.MediaFormatUtil;
 import androidx.media3.common.util.UnstableApi;
 import androidx.media3.common.util.Util;
 import com.google.common.base.Ascii;
@@ -91,24 +88,58 @@ public final class EncoderUtil {
     }
 
     ImmutableList<MediaCodecInfo> encoders = getSupportedEncoders(mimeType);
-    ImmutableList<Integer> allowedColorProfiles =
-        getCodecProfilesForHdrFormat(mimeType, colorInfo.colorTransfer);
     ImmutableList.Builder<MediaCodecInfo> resultBuilder = new ImmutableList.Builder<>();
     for (int i = 0; i < encoders.size(); i++) {
       MediaCodecInfo mediaCodecInfo = encoders.get(i);
-      if (mediaCodecInfo.isAlias()
-          || !isFeatureSupported(
-              mediaCodecInfo, mimeType, MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing)) {
+      if (mediaCodecInfo.isAlias()) {
         continue;
       }
-      for (MediaCodecInfo.CodecProfileLevel codecProfileLevel :
-          mediaCodecInfo.getCapabilitiesForType(mimeType).profileLevels) {
-        if (allowedColorProfiles.contains(codecProfileLevel.profile)) {
-          resultBuilder.add(mediaCodecInfo);
-        }
+      if (isHdrEditingSupported(mediaCodecInfo, mimeType, colorInfo)) {
+        resultBuilder.add(mediaCodecInfo);
       }
     }
     return resultBuilder.build();
+  }
+
+  /**
+   * Returns whether HDR editing with the given {@linkplain ColorInfo color transfer} is supported
+   * by the given {@linkplain MediaCodecInfo encoder}.
+   *
+   * @param mediaCodecInfo The encoder.
+   * @param mimeType The MIME type of the video stream.
+   * @param colorInfo The color info.
+   */
+  @RequiresApi(33)
+  public static boolean isHdrEditingSupported(
+      MediaCodecInfo mediaCodecInfo, String mimeType, ColorInfo colorInfo) {
+    boolean hasNeededHdrSupport = false;
+    // Some Dolby Vision encoders do not advertise FEATURE_HlgEditing but correctly support 10-bit
+    // input surface.
+    if (mimeType.equals(MimeTypes.VIDEO_DOLBY_VISION)) {
+      hasNeededHdrSupport = true;
+    } else {
+      hasNeededHdrSupport =
+          isFeatureSupported(
+                  mediaCodecInfo, mimeType, MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing)
+              || (colorInfo.colorTransfer == C.COLOR_TRANSFER_HLG
+                  && Util.SDK_INT >= 35
+                  && isFeatureSupported(
+                      mediaCodecInfo,
+                      mimeType,
+                      MediaCodecInfo.CodecCapabilities.FEATURE_HlgEditing));
+    }
+    if (!hasNeededHdrSupport) {
+      return false;
+    }
+    ImmutableList<Integer> allowedColorProfiles =
+        getCodecProfilesForHdrFormat(mimeType, colorInfo.colorTransfer);
+    for (MediaCodecInfo.CodecProfileLevel codecProfileLevel :
+        mediaCodecInfo.getCapabilitiesForType(mimeType).profileLevels) {
+      if (allowedColorProfiles.contains(codecProfileLevel.profile)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /**
@@ -120,7 +151,7 @@ public final class EncoderUtil {
   @SuppressWarnings("InlinedApi") // Safe use of inlined constants from newer API versions.
   public static ImmutableList<Integer> getCodecProfilesForHdrFormat(
       String mimeType, @ColorTransfer int colorTransfer) {
-    // TODO(b/239174610): Add a way to determine profiles for DV and HDR10+.
+    // TODO: b/239174610 - Add a way to determine profiles for DV and HDR10+.
     switch (mimeType) {
       case MimeTypes.VIDEO_VP9:
         if (colorTransfer == C.COLOR_TRANSFER_HLG || colorTransfer == C.COLOR_TRANSFER_ST2084) {
@@ -149,6 +180,12 @@ public final class EncoderUtil {
         } else if (colorTransfer == C.COLOR_TRANSFER_ST2084) {
           return ImmutableList.of(MediaCodecInfo.CodecProfileLevel.AV1ProfileMain10HDR10);
         }
+        break;
+      case MimeTypes.VIDEO_DOLBY_VISION:
+        if (colorTransfer == C.COLOR_TRANSFER_HLG) {
+          return ImmutableList.of(MediaCodecInfo.CodecProfileLevel.DolbyVisionProfileDvheSt);
+        }
+        // CodecProfileLevel does not support PQ for Dolby Vision.
         break;
       default:
         break;
@@ -290,7 +327,7 @@ public final class EncoderUtil {
    */
   public static int findHighestSupportedEncodingLevel(
       MediaCodecInfo encoderInfo, String mimeType, int profile) {
-    // TODO(b/214964116): Merge into MediaCodecUtil.
+    // TODO: b/214964116 - Merge into MediaCodecUtil.
     MediaCodecInfo.CodecProfileLevel[] profileLevels =
         encoderInfo.getCapabilitiesForType(mimeType).profileLevels;
 
@@ -301,37 +338,6 @@ public final class EncoderUtil {
       }
     }
     return maxSupportedLevel;
-  }
-
-  /**
-   * Finds a {@link MediaCodec} that supports the {@link MediaFormat}, or {@code null} if none is
-   * found.
-   */
-  @Nullable
-  public static String findCodecForFormat(MediaFormat format, boolean isDecoder) {
-    MediaCodecList mediaCodecList = new MediaCodecList(MediaCodecList.REGULAR_CODECS);
-    // Format must not include KEY_FRAME_RATE on API21.
-    // https://developer.android.com/reference/android/media/MediaCodecList#findDecoderForFormat(android.media.MediaFormat)
-    float frameRate = Format.NO_VALUE;
-    if (Util.SDK_INT == 21 && format.containsKey(MediaFormat.KEY_FRAME_RATE)) {
-      try {
-        frameRate = format.getFloat(MediaFormat.KEY_FRAME_RATE);
-      } catch (ClassCastException e) {
-        frameRate = format.getInteger(MediaFormat.KEY_FRAME_RATE);
-      }
-      // Clears the frame rate field.
-      format.setString(MediaFormat.KEY_FRAME_RATE, null);
-    }
-
-    String mediaCodecName =
-        isDecoder
-            ? mediaCodecList.findDecoderForFormat(format)
-            : mediaCodecList.findEncoderForFormat(format);
-
-    if (Util.SDK_INT == 21) {
-      MediaFormatUtil.maybeSetInteger(format, MediaFormat.KEY_FRAME_RATE, round(frameRate));
-    }
-    return mediaCodecName;
   }
 
   /** Returns the range of supported bitrates for the given {@linkplain MimeTypes MIME type}. */
@@ -360,9 +366,41 @@ public final class EncoderUtil {
         Ints.asList(encoderInfo.getCapabilitiesForType(mimeType).colorFormats));
   }
 
+  /**
+   * Returns the sample rate supported by the provided {@linkplain MediaCodecInfo encoder} that is
+   * closest to the provided sample rate.
+   */
+  public static int getClosestSupportedSampleRate(
+      MediaCodecInfo encoderInfo, String mimeType, int requestedSampleRate) {
+    MediaCodecInfo.AudioCapabilities audioCapabilities =
+        encoderInfo.getCapabilitiesForType(mimeType).getAudioCapabilities();
+    @Nullable int[] supportedSampleRates = audioCapabilities.getSupportedSampleRates();
+    int closestSampleRate = Integer.MAX_VALUE;
+    if (supportedSampleRates != null) {
+      // The codec supports only discrete values.
+      for (int supportedSampleRate : supportedSampleRates) {
+        if (Math.abs(supportedSampleRate - requestedSampleRate)
+            < Math.abs(closestSampleRate - requestedSampleRate)) {
+          closestSampleRate = supportedSampleRate;
+        }
+      }
+      return closestSampleRate;
+    } else {
+      Range<Integer>[] ranges = audioCapabilities.getSupportedSampleRateRanges();
+      for (Range<Integer> range : ranges) {
+        int supportedSampleRate = range.clamp(requestedSampleRate);
+        if (Math.abs(supportedSampleRate - requestedSampleRate)
+            < Math.abs(closestSampleRate - requestedSampleRate)) {
+          closestSampleRate = supportedSampleRate;
+        }
+      }
+    }
+    return closestSampleRate;
+  }
+
   /** Checks if a {@linkplain MediaCodecInfo codec} is hardware-accelerated. */
   public static boolean isHardwareAccelerated(MediaCodecInfo encoderInfo, String mimeType) {
-    // TODO(b/214964116): Merge into MediaCodecUtil.
+    // TODO: b/214964116 - Merge into MediaCodecUtil.
     if (Util.SDK_INT >= 29) {
       return Api29.isHardwareAccelerated(encoderInfo);
     }
@@ -447,12 +485,10 @@ public final class EncoderUtil {
 
   @RequiresApi(29)
   private static final class Api29 {
-    @DoNotInline
     public static boolean isHardwareAccelerated(MediaCodecInfo encoderInfo) {
       return encoderInfo.isHardwareAccelerated();
     }
 
-    @DoNotInline
     public static boolean isSoftwareOnly(MediaCodecInfo encoderInfo) {
       return encoderInfo.isSoftwareOnly();
     }

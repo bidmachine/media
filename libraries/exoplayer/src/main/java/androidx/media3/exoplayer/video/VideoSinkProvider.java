@@ -18,20 +18,17 @@ package androidx.media3.exoplayer.video;
 
 import android.view.Surface;
 import androidx.media3.common.util.Size;
-import androidx.media3.common.util.UnstableApi;
 
 /** A provider of {@link VideoSink VideoSinks}. */
-@UnstableApi
-public interface VideoSinkProvider {
+/* package */ interface VideoSinkProvider {
 
   /**
-   * Returns the {@link VideoFrameReleaseControl} that will be used for releasing of video frames
-   * during rendering.
+   * Returns the {@link VideoSink} to forward video frames for processing.
+   *
+   * @param inputIndex The index of the {@link VideoSink}.
+   * @return The {@link VideoSink} at the given index.
    */
-  VideoFrameReleaseControl getVideoFrameReleaseControl();
-
-  /** Returns a {@link VideoSink} to forward video frames for processing. */
-  VideoSink getSink();
+  VideoSink getSink(int inputIndex);
 
   /** Sets the output surface info. */
   void setOutputSurfaceInfo(Surface outputSurface, Size outputResolution);

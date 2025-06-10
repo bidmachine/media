@@ -26,7 +26,7 @@ import androidx.media3.common.C;
 import androidx.media3.common.Format;
 import androidx.media3.common.Metadata;
 import androidx.media3.common.util.Util;
-import androidx.media3.muxer.Muxer;
+import androidx.media3.muxer.MuxerException;
 import androidx.media3.test.utils.DumpableFormat;
 import androidx.media3.test.utils.Dumper;
 import androidx.media3.test.utils.Dumper.Dumpable;
@@ -37,8 +37,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
  * A {@link Dumpable} {@link Muxer} implementation that supports dumping information about all
@@ -87,7 +85,7 @@ public final class CapturingMuxer implements Muxer, Dumpable {
   private final boolean handleAudioAsPcm;
   private final SparseArray<DumpableFormat> dumpableFormatByTrackType;
   private final SparseArray<DumpableStream> dumpableStreamByTrackType;
-  private final Map<TrackToken, Integer> trackTokenToType;
+  private final SparseArray<Integer> trackIdToType;
   private final ArrayList<Metadata.Entry> metadataList;
   private boolean released;
 
@@ -97,18 +95,18 @@ public final class CapturingMuxer implements Muxer, Dumpable {
     this.handleAudioAsPcm = handleAudioAsPcm;
     dumpableFormatByTrackType = new SparseArray<>();
     dumpableStreamByTrackType = new SparseArray<>();
-    trackTokenToType = new HashMap<>();
+    trackIdToType = new SparseArray<>();
     metadataList = new ArrayList<>();
   }
 
   // Muxer implementation.
 
   @Override
-  public TrackToken addTrack(Format format) throws MuxerException {
-    TrackToken trackToken = wrappedMuxer.addTrack(format);
+  public int addTrack(Format format) throws MuxerException {
+    int trackId = wrappedMuxer.addTrack(format);
     @C.TrackType int trackType = getProcessedTrackType(format.sampleMimeType);
 
-    trackTokenToType.put(trackToken, trackType);
+    trackIdToType.put(trackId, trackType);
 
     dumpableFormatByTrackType.append(
         trackType, new DumpableFormat(format, /* tag= */ Util.getTrackTypeString(trackType)));
@@ -119,20 +117,20 @@ public final class CapturingMuxer implements Muxer, Dumpable {
             ? new DumpablePcmAudioStream(trackType)
             : new DumpableStream(trackType));
 
-    return trackToken;
+    return trackId;
   }
 
   @Override
-  public void writeSampleData(TrackToken trackToken, ByteBuffer data, BufferInfo bufferInfo)
+  public void writeSampleData(int trackId, ByteBuffer data, BufferInfo bufferInfo)
       throws MuxerException {
-    @C.TrackType int trackType = checkNotNull(trackTokenToType.get(trackToken));
+    @C.TrackType int trackType = checkNotNull(trackIdToType.get(trackId));
     dumpableStreamByTrackType
         .get(trackType)
         .addSample(
             data,
             (bufferInfo.flags & C.BUFFER_FLAG_KEY_FRAME) == C.BUFFER_FLAG_KEY_FRAME,
             bufferInfo.presentationTimeUs);
-    wrappedMuxer.writeSampleData(trackToken, data, bufferInfo);
+    wrappedMuxer.writeSampleData(trackId, data, bufferInfo);
   }
 
   @Override
@@ -145,6 +143,14 @@ public final class CapturingMuxer implements Muxer, Dumpable {
   public void close() throws MuxerException {
     released = true;
     wrappedMuxer.close();
+  }
+
+  public long getTotalBytesForTrack(@C.TrackType int trackType) {
+    @Nullable DumpableStream stream = dumpableStreamByTrackType.get(trackType);
+    if (stream == null) {
+      return 0;
+    }
+    return stream.totalStreamSizeBytes;
   }
 
   // Dumper.Dumpable implementation.
@@ -175,12 +181,15 @@ public final class CapturingMuxer implements Muxer, Dumpable {
     private final @C.TrackType int trackType;
     protected final ArrayList<DumpableSample> dumpableSamples;
 
+    protected long totalStreamSizeBytes;
+
     public DumpableStream(@C.TrackType int trackType) {
       this.trackType = trackType;
       this.dumpableSamples = new ArrayList<>();
     }
 
     public void addSample(ByteBuffer sample, boolean isKeyFrame, long presentationTimeUs) {
+      totalStreamSizeBytes += sample.remaining();
       dumpableSamples.add(new DumpableSample(trackType, sample, isKeyFrame, presentationTimeUs));
     }
 
@@ -213,6 +222,7 @@ public final class CapturingMuxer implements Muxer, Dumpable {
 
     @Override
     public void addSample(ByteBuffer sample, boolean isKeyFrame, long presentationTimeUs) {
+      totalStreamSizeBytes += sample.remaining();
       int samplePosition = sample.position();
 
       while (sample.hasRemaining()) {
@@ -226,7 +236,7 @@ public final class CapturingMuxer implements Muxer, Dumpable {
         byte[] byteHolder = new byte[bytesToProgress];
         sample.get(byteHolder);
         currentPendingData.put(byteHolder);
-        currentPendingData.position(0);
+        currentPendingData.flip();
         dumpableSamples.add(
             new DumpableSample(
                 C.TRACK_TYPE_AUDIO, currentPendingData, /* isKeyFrame= */ true, C.TIME_UNSET));
@@ -239,6 +249,7 @@ public final class CapturingMuxer implements Muxer, Dumpable {
     @Override
     public void dump(Dumper dumper) {
       if (currentPendingData.position() != 0) {
+        currentPendingData.flip();
         dumpableSamples.add(
             new DumpableSample(
                 C.TRACK_TYPE_AUDIO, currentPendingData, /* isKeyFrame= */ true, C.TIME_UNSET));
