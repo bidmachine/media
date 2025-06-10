@@ -12,7 +12,13 @@ tasks.register('renameAllPackages') {
     group = taskGroup
     description = "Rename all packages"
 
-    dependsOn renamePackageJava, renamePackageAidl, renamePackageTest, renamePackageAndroidTest
+    dependsOn renameCommon, renamePackageJava, renamePackageAidl, renamePackageTest, renamePackageAndroidTest
+}
+
+tasks.register('renameCommon') {
+    group = taskGroup
+    def commonConfigGradleFile = file("${rootDir}/common_library_config.gradle")
+    processBuildGradle(commonConfigGradleFile, oldPackageName, newPackageName)
 }
 
 // Rename sources packages
