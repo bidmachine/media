@@ -23,6 +23,7 @@ tasks.register('renamePackageJava') {
     def newJavaPackagePath = "${projectDir}/src/main/java/${newPackagePath}".toString()
     def buildGradleFile = file("${projectDir}/build.gradle")
     def manifestFile = file("${projectDir}/src/main/AndroidManifest.xml")
+    def proguardFile = file("${projectDir}/proguard-rules.txt")
     def xmlResourcesDir = file("${projectDir}/src/main/res/layout")
 
     doLast {
@@ -30,6 +31,7 @@ tasks.register('renamePackageJava') {
         processBuildGradle(buildGradleFile, oldPackageName, newPackageName)
         processManifest(manifestFile, oldPackagePath, newPackagePath, oldPackageName, newPackageName)
         processXmlFiles(xmlResourcesDir, newJavaPackagePath, resPrefix, oldPackageName, newPackageName)
+        processProguard(proguardFile, newJavaPackagePath, resPrefix, oldPackageName, newPackageName)
         cleanupFiles(oldJavaPackagePath)
     }
 }
@@ -135,6 +137,16 @@ def processXmlFiles(File resourcesDir, String newJavaPackagePath, String resPref
             }
         }
     }
+}
+
+def processProguard(File proguardFile, String oldPackagePath, String newPackagePath, String oldPackageName, String newPackageName) {
+    if (!proguardFile.exists()) {
+        return
+    }
+    String proguardContent = proguardFile.text
+    proguardContent = proguardContent.replace(oldPackageName, newPackageName)
+    proguardFile.text = proguardContent
+    println("Updated package in $proguardFile: ${oldPackagePath} to ${newPackagePath}")
 }
 
 def cleanupFiles(String oldJavaPackagePath) {
